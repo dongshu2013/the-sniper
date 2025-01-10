@@ -1,8 +1,10 @@
-from logging import logger
+import logging
 
 from telethon import TelegramClient
 
-from .config import API_HASH, API_ID, BOT_TOKEN
+from .config import API_HASH, API_ID, PHONE
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramListener:
@@ -10,7 +12,7 @@ class TelegramListener:
         self.client = TelegramClient("bot_session", API_ID, API_HASH)
 
     async def start(self):
-        await self.client.start(bot_token=BOT_TOKEN)
+        await self.client.start(phone=PHONE)
         logger.info("Telegram bot started successfully")
 
     async def stop(self):

@@ -1,19 +1,22 @@
 import asyncio
-from logging import logger
+import logging
 
-from .bot_client import TelegramBot
+from .bot_client import TelegramListener
 from .config import PROCESSING_INTERVAL
 from .handlers import register_handlers
 from .message_processor import MessageProcessor
 
+# Create logger instance
+logger = logging.getLogger(__name__)
 
-async def main():
+
+async def run():
     # Initialize bot
-    bot = TelegramBot()
-    await bot.start()
+    listner = TelegramListener()
+    await listner.start()
 
     # Register message handlers
-    await register_handlers(bot.client)
+    await register_handlers(listner.client)
 
     # Initialize and start message processor
     processor = MessageProcessor(PROCESSING_INTERVAL)
@@ -21,13 +24,13 @@ async def main():
     try:
         # Run both the bot and processor
         await asyncio.gather(
-            bot.client.run_until_disconnected(), processor.start_processing()
+            listner.client.run_until_disconnected(), processor.start_processing()
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         await processor.stop_processing()
-        await bot.stop()
+        await listner.stop()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def main():
+    asyncio.run(run())
