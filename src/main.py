@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from src.group_processor import ChatProcessor
+
 from .bot_client import TelegramListener
 from .config import PROCESSING_INTERVAL
 from .handlers import register_handlers
@@ -19,20 +21,19 @@ async def run():
     await listner.start()
     logger.info("Telegram bot started successfully")
 
-    # Register message handlers
     await register_handlers(listner.client)
-
-    # Initialize and start message processor
-    processor = MessageProcessor(PROCESSING_INTERVAL)
+    msg_processor = MessageProcessor(PROCESSING_INTERVAL)
+    grp_processor = ChatProcessor(listner.client, PROCESSING_INTERVAL)
 
     try:
-        # Run both the bot and processor
         await asyncio.gather(
-            listner.client.run_until_disconnected(), processor.start_processing()
+            listner.client.run_until_disconnected(),
+            msg_processor.start_processing(),
+            grp_processor.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        await processor.stop_processing()
+        # await processor.stop_processing()
         await listner.stop()
 
 
