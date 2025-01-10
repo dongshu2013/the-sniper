@@ -57,14 +57,15 @@ async def try_watch_group_or_channel(
     if await is_group_or_channel_disabled(chat_id):
         return False
 
+    watchers = await get_watchers(chat_id)
+
     # already watched
     me = await client.get_me()
-    if await is_watcher(me.id, chat_id):
+    if me.id in watchers:
         return True
 
-    num_of_watchers = await get_num_of_watchers(chat_id)
     # already watched by enough accounts
-    if num_of_watchers >= MIN_WATCHERS:
+    if len(watchers) >= MIN_WATCHERS:
         return False
 
     if dialog.entity.participants_count >= MIN_PARTICIPANTS:
@@ -140,9 +141,6 @@ async def is_group_or_channel_disabled(chat_id: str) -> bool:
     return await redis_client.get(chat_status_key(chat_id)) == "disabled"
 
 
-async def get_num_of_watchers(chat_id: str) -> int:
-    return (await redis_client.llen(chat_watchers_key(chat_id))) or 0
-
-
-async def is_watcher(watcher: str | int, chat_id: str | int) -> bool:
-    return await redis_client.get(watcher_key(str(watcher), str(chat_id))) == "true"
+async def get_watchers(chat_id: str) -> list[str]:
+    value = await redis_client.lrange(chat_watchers_key(chat_id), 0, -1)
+    return [str(v) for v in value] if value else []

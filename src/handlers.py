@@ -3,7 +3,7 @@ import logging
 from telethon import TelegramClient, events
 
 from src.config import SERVICE_PREFIX, redis_client
-from src.group_processor import is_watcher
+from src.group_processor import get_watchers
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +21,13 @@ async def register_handlers(client: TelegramClient):
             )
             return
 
+        chat_id = str(event.chat_id)
+        watchers = await get_watchers(chat_id)
         me = await client.get_me()
-        if not await is_watcher(me.id, event.chat.id):
+        if me.id not in watchers:
             logger.info(f"Group/channel not validated: {event.chat.title}")
             return
 
-        chat_id = str(event.chat_id)
         message_id = str(event.id)
         if await has_seen_message(chat_id, message_id):
             logger.info(f"Message already seen: {event}")
