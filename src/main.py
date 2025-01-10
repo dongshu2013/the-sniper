@@ -12,8 +12,11 @@ logger = logging.getLogger(__name__)
 
 async def run():
     # Initialize bot
+    logger.info("Initializing Telegram bot")
     listner = TelegramListener()
+    logger.info("Starting Telegram bot")
     await listner.start()
+    logger.info("Telegram bot started successfully")
 
     # Register message handlers
     await register_handlers(listner.client)

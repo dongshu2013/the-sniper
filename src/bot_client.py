@@ -13,8 +13,6 @@ class TelegramListener:
 
     async def start(self):
         await self.client.start(phone=PHONE)
-        logger.info("Telegram bot started successfully")
 
     async def stop(self):
         await self.client.disconnect()
-        logger.info("Telegram bot stopped")
