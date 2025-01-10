@@ -1,14 +1,17 @@
+import json
 import logging
+import time
 
+from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
-from src.config import SERVICE_PREFIX, redis_client
-from src.group_processor import get_watchers
+from src.config import SERVICE_PREFIX
+from src.group_processor import ChatStatus, user_chat_key
 
 logger = logging.getLogger(__name__)
 
 
-async def register_handlers(client: TelegramClient):
+async def register_handlers(client: TelegramClient, redis_client: Redis):
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
@@ -21,19 +24,6 @@ async def register_handlers(client: TelegramClient):
             )
             return
 
-        chat_id = str(event.chat_id)
-        watchers = await get_watchers(chat_id)
-        me = await client.get_me()
-        if me.id not in watchers:
-            logger.info(f"Group/channel not validated: {event.chat.title}")
-            return
-
-        message_id = str(event.id)
-        if await has_seen_message(chat_id, message_id):
-            logger.info(f"Message already seen: {event}")
-            return
-        await seen_message(chat_id, message_id)
-
         message_text = event.message.text
         if not message_text:
             logger.info(
@@ -42,19 +32,37 @@ async def register_handlers(client: TelegramClient):
             )
             return
 
+        chat_id = str(event.chat_id)
+        message_id = str(event.id)
+        me = await client.get_me()
+        should_process = await should_process_message(
+            redis_client, chat_id, str(me.id), message_id
+        )
+        if not should_process:
+            logger.info(f"Message not processed: {event}")
+            return
+
         logger.info(f"New group message received in {chat_id}: {message_text}")
-        # Add message to the group-specific Redis queue
-        queue_key = f"chat:{chat_id}:messages"
-        await redis_client.lpush(queue_key, message_text)
+        pipelines = redis_client.pipeline()
+        pipelines.set(message_seen_key(chat_id, message_id), int(time.time()))
+        pipelines.lpush(f"chat:{chat_id}:messages", message_text)
+        await pipelines.execute()
 
 
 def message_seen_key(chat_id: str, message_id: str):
     return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
 
 
-async def seen_message(chat_id: str, message_id: str):
-    await redis_client.set(message_seen_key(chat_id, message_id), "seen")
+async def should_process_message(
+    redis_client: Redis, chat_id: str, user_id: str, message_id: str
+) -> bool:
+    status, seen = await redis_client.mget(
+        user_chat_key(user_id, chat_id),
+        message_seen_key(chat_id, message_id),
+    )
 
+    status = json.loads(status)
+    if status["status"] != ChatStatus.WATCHING.value:
+        return False
 
-async def has_seen_message(chat_id: str, message_id: str) -> bool:
-    return await redis_client.get(message_seen_key(chat_id, message_id)) == "seen"
+    return seen is None
