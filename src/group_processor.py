@@ -3,6 +3,7 @@ import json
 import logging
 from enum import Enum
 
+from redis import Pipeline
 from telethon import TelegramClient, types
 
 from src.config import SERVICE_PREFIX, redis_client
@@ -14,17 +15,18 @@ MIN_PARTICIPANTS = 50
 MIN_WATCHERS = 2
 
 
-class DisableReason(Enum):
+class ChatStatus(Enum):
+    ACTIVE = "active"
     NOT_ENOUGH_PARTICIPANTS = "not_enough_participants"
     NOT_RELATED_TOPIC = "not_related_topic"
-    OTHER = "other"
 
 
 class ChatProcessor:
     def __init__(self, client: TelegramClient, interval: int):
+        self.client = client
         self.interval = interval
         self.running = False
-        self.client = client
+        self.force = False
 
     async def start_processing(self):
         self.running = True
@@ -39,28 +41,45 @@ class ChatProcessor:
         async for dialog in self.client.iter_dialogs(ignore_migrated=True):
             if not dialog.is_group and not dialog.is_channel:
                 continue
-            await try_watch_group_or_channel(
-                self.client,
-                dialog,
+
+            me = await self.client.get_me()
+            chat_id = str(dialog.id)
+            processed = await redis_client.get(user_chat_key(me.id, chat_id))
+            if processed == "true" and not self.force:
+                continue  # already processed
+
+            pipeline = redis_client.pipeline()
+            await try_watch_group_or_channel(me, dialog, pipeline)
+            await pipeline.set(
+                chat_info_key(chat_id),
+                json.dumps(
+                    {
+                        "name": dialog.name,
+                        "id": dialog.id,
+                        "participants_count": dialog.entity.participants_count,
+                    }
+                ),
             )
+            await pipeline.set(user_chat_key(me.id, chat_id), "true")
+            await pipeline.execute()
 
     async def stop_processing(self):
         self.running = False
 
 
 async def try_watch_group_or_channel(
-    client: TelegramClient,
+    me: types.User,
     dialog: types.Dialog,
+    pipeline: Pipeline,
 ):
     chat_id = str(dialog.id)
-    # group is disabled
-    if await is_group_or_channel_disabled(chat_id):
+
+    # group is disabled by other watchers
+    if await is_chat_disabled(chat_id):
         return False
 
     watchers = await get_watchers(chat_id)
-
-    # already watched
-    me = await client.get_me()
+    # already watched by this account
     if me.id in watchers:
         return True
 
@@ -70,7 +89,7 @@ async def try_watch_group_or_channel(
 
     if dialog.entity.participants_count >= MIN_PARTICIPANTS:
         logger.info(f"Watching group/channel: {dialog.name}")
-        await watch_group_or_channel(dialog, me.id)
+        pipeline.lpush(chat_watchers_key(chat_id), me.id)
         return True
     else:
         logger.info(
@@ -78,7 +97,7 @@ async def try_watch_group_or_channel(
             f"{dialog.name} with {dialog.entity.participants_count} participants"
         )
         # we can have cron job to re-check disabled groups
-        await disable_group_or_channel(chat_id, DisableReason.NOT_ENOUGH_PARTICIPANTS)
+        pipeline.set(chat_status_key(chat_id), ChatStatus.NOT_ENOUGH_PARTICIPANTS.value)
         return False
 
 
@@ -94,51 +113,21 @@ def chat_status_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:status"
 
 
-def watcher_key(watcher: str, chat_id: str):
-    return f"{SERVICE_PREFIX}:user:{watcher}:watch:{chat_id}"
+def user_chat_key(user_id: str, chat_id: str):
+    return f"{SERVICE_PREFIX}:user:{user_id}:chat:{chat_id}"
 
 
-async def watch_group_or_channel(dialog: types.Dialog, watcher: str):
-    chat_id = str(dialog.id)
-    pipeline = redis_client.pipeline()
-    pipeline.lpush(chat_watchers_key(chat_id), watcher)
-    pipeline.set(watcher_key(watcher, chat_id), "true")
-    pipeline.set(
-        chat_info_key(chat_id),
-        json.dumps(
-            {
-                "name": dialog.name,
-                "id": dialog.id,
-                "participants_count": dialog.entity.participants_count,
-            }
-        ),
+async def get_chat_info(chat_id: str) -> dict | None:
+    value = await redis_client.get(chat_info_key(chat_id))
+    return json.loads(value) if value else None
+
+
+async def is_chat_disabled(chat_id: str) -> bool:
+    status = await redis_client.get(chat_status_key(chat_id))
+    return (
+        status == ChatStatus.NOT_ENOUGH_PARTICIPANTS.value
+        or status == ChatStatus.NOT_RELATED_TOPIC.value
     )
-    await pipeline.execute()
-
-
-async def unwatch_group_or_channel(chat_id: str, watcher: str):
-    pipeline = redis_client.pipeline()
-    pipeline.lrem(chat_watchers_key(chat_id), 0, watcher)
-    pipeline.delete(watcher_key(watcher, chat_id))
-    await pipeline.execute()
-
-
-async def disable_group_or_channel(chat_id: str, reason: DisableReason):
-    watchers = await redis_client.lrange(chat_watchers_key(chat_id), 0, -1)
-    pipeline = redis_client.pipeline()
-    for watcher in watchers:
-        pipeline.delete(watcher_key(watcher, chat_id))
-    pipeline.delete(chat_watchers_key(chat_id))
-    pipeline.set(chat_status_key(chat_id), reason.value)
-    await pipeline.execute()
-
-
-async def enable_group_or_channel(chat_id: str):
-    await redis_client.delete(chat_status_key(chat_id))
-
-
-async def is_group_or_channel_disabled(chat_id: str) -> bool:
-    return await redis_client.get(chat_status_key(chat_id)) == "disabled"
 
 
 async def get_watchers(chat_id: str) -> list[str]:
