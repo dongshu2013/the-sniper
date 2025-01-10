@@ -8,8 +8,8 @@ packages = [{include = "src"}]
 [tool.poetry.dependencies]
 python = "^3.9"
 telethon = "^1.38.1"
-redis = "^5.2.1"
 
+redis = "^5.2.1"
 [tool.poetry.group.dev.dependencies]
 black = "^24.1.0"
 isort = "^5.13.0"
