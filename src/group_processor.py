@@ -98,6 +98,7 @@ async def should_watch_chat(
         return False
 
     # already watched
+    watchers = [] if watchers is None else json.loads(watchers)
     if me.id in watchers:
         return False
 
