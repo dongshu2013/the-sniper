@@ -7,6 +7,7 @@ from .handlers import register_handlers
 from .message_processor import MessageProcessor
 
 # Create logger instance
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
