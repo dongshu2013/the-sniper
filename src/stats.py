@@ -13,6 +13,7 @@ async def run():
     try:
         msg_pattern = f"{SERVICE_PREFIX}:chat:*:messages"
         msg_keys = await redis.keys(msg_pattern)
+        results = []
         for msg_key in msg_keys:
             num_of_messages = await redis.llen(msg_key)
             chat_id = str(msg_key).split(":")[2]
@@ -20,9 +21,13 @@ async def run():
             if chat_info:
                 chat_info = json.loads(chat_info)
                 chat_info["num_of_messages"] = num_of_messages
-                print(f"Info for {chat_id}: {chat_info}")
+                results.append(chat_info)
             else:
-                print(f"No info for {chat_id}: messages={num_of_messages}")
+                results.append({"chat_id": chat_id, "num_of_messages": num_of_messages})
+        sorted_results = sorted(
+            results, key=lambda x: x["num_of_messages"], reverse=True
+        )
+        print(sorted_results)
     finally:
         await redis.aclose()  # Properly close Redis connection
 
