@@ -65,7 +65,16 @@ async def register_handlers(client: TelegramClient, redis_client: Redis):
 
         pipelines = redis_client.pipeline()
         pipelines.set(message_seen_key(chat_id, message_id), int(time.time()))
-        pipelines.lpush(f"{SERVICE_PREFIX}:chat:{chat_id}:messages", message_text)
+        pipelines.lpush(
+            f"{SERVICE_PREFIX}:chat:{chat_id}:messages",
+            json.dumps(
+                {
+                    "sender": str(event.sender_id),
+                    "message": message_text,
+                    "timestamp": int(event.date.timestamp()),
+                }
+            ),
+        )
         await pipelines.execute()
 
 
@@ -90,3 +99,7 @@ async def should_process_message(
 
 def main():
     asyncio.run(run())
+
+
+if __name__ == "__main__":
+    main()
