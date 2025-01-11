@@ -1,24 +1,27 @@
 import asyncio
 import json
 import logging
-import os
 import time
 
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
-from src.config import SERVICE_PREFIX
-from src.group_processor import ChatStatus, user_chat_key
+from src.config import (
+    PROCESSING_INTERVAL,
+    REDIS_URL,
+    SERVICE_PREFIX,
+    ChatStatus,
+    user_chat_key,
+)
 
 from .bot_client import TelegramListener
-from .config import PROCESSING_INTERVAL
-from .group_processor import ChatProcessor
+from .processors.group_processor import ChatProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-redis_client = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+redis_client = Redis.from_url(REDIS_URL)
 
 
 async def run():
@@ -29,8 +32,8 @@ async def run():
     await listner.start()
     logger.info("Telegram bot started successfully")
 
-    await register_handlers(listner.client, redis_client)
-    grp_processor = ChatProcessor(listner.client, redis_client, PROCESSING_INTERVAL)
+    await register_handlers(listner.client)
+    grp_processor = ChatProcessor(listner.client, PROCESSING_INTERVAL)
 
     try:
         await asyncio.gather(
@@ -43,7 +46,7 @@ async def run():
         await listner.stop()
 
 
-async def register_handlers(client: TelegramClient, redis_client: Redis):
+async def register_handlers(client: TelegramClient):
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
@@ -83,9 +86,7 @@ def message_seen_key(chat_id: str, message_id: str):
     return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
 
 
-async def should_process_message(
-    redis_client: Redis, chat_id: str, user_id: str, message_id: str
-) -> bool:
+async def should_process_message(chat_id: str, user_id: str, message_id: str) -> bool:
     status, seen = await redis_client.mget(
         user_chat_key(user_id, chat_id),
         message_seen_key(chat_id, message_id),

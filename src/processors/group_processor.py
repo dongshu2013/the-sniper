@@ -7,7 +7,7 @@ from enum import Enum
 from redis.asyncio import Redis
 from telethon import TelegramClient, types
 
-from src.config import chat_info_key, chat_watchers_key, user_chat_key
+from src.config import REDIS_URL, chat_info_key, chat_watchers_key, user_chat_key
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +24,12 @@ class ChatStatus(Enum):
 
 
 class ChatProcessor:
-    def __init__(self, client: TelegramClient, redis_client: Redis, interval: int):
+    def __init__(self, client: TelegramClient, interval: int):
         self.client = client
         self.interval = interval
         self.running = False
         self.force = False
-        self.redis_client = redis_client
+        self.redis_client = Redis.from_url(REDIS_URL)
 
     async def start_processing(self):
         self.running = True

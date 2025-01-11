@@ -3,31 +3,23 @@ import json
 import logging
 
 import psycopg2
+from redis import Redis
 
-from src.config import DATABASE_URL, SERVICE_PREFIX  # Add DATABASE_URL to config
+from config import DATABASE_URL, PROCESSING_INTERVAL, REDIS_URL, SERVICE_PREFIX
 
 logger = logging.getLogger(__name__)
 
 
 class MessageProcessor:
-    def __init__(
-        self,
-        interval,
-        redis_client,
-        batch_size=1000,
-    ):
-        self.interval = interval
+    def __init__(self, batch_size=1000):
         self.running = False
-        self.redis_client = redis_client
         self.batch_size = batch_size
-        self.conn = None
+        self.interval = PROCESSING_INTERVAL
+        self.redis_client = Redis.from_url(REDIS_URL)
+        self.conn = psycopg2.connect(DATABASE_URL)
 
     async def start_processing(self):
-        # Create PostgreSQL connection
         try:
-            self.conn = psycopg2.connect(DATABASE_URL)
-
-            # Create messages table if it doesn't exist
             with self.conn.cursor() as cur:
                 cur.execute(
                     """

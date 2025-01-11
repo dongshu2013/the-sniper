@@ -1,18 +1,22 @@
 import asyncio
 import logging
-import os
 
-from redis.asyncio import Redis
+from .processors.message_processor import MessageProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-redis_client = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
-
 
 async def run():
-    pass
+    msg_processor = MessageProcessor()
+    try:
+        await asyncio.gather(
+            msg_processor.start_processing(),
+        )
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        await msg_processor.stop_processing()
 
 
 def main():
