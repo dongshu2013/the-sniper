@@ -9,3 +9,15 @@ API_HASH = os.getenv("TG_API_HASH")
 PHONE = os.getenv("TG_PHONE")
 PROCESSING_INTERVAL = int(os.getenv("PROCESSING_INTERVAL", 300))
 SERVICE_PREFIX = "the_sinper_bot"
+
+
+def chat_watchers_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:watchers"
+
+
+def chat_info_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:info"
+
+
+def user_chat_key(user_id: str, chat_id: str):
+    return f"{SERVICE_PREFIX}:user:{user_id}:chat:{chat_id}"

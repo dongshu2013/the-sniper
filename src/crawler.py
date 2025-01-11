@@ -90,6 +90,9 @@ async def should_process_message(
         message_seen_key(chat_id, message_id),
     )
 
+    if status is None:
+        return False
+
     status = json.loads(status)
     if status["status"] != ChatStatus.ACTIVE.value:
         return False

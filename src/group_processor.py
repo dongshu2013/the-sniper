@@ -7,7 +7,7 @@ from enum import Enum
 from redis.asyncio import Redis
 from telethon import TelegramClient, types
 
-from src.config import SERVICE_PREFIX
+from src.config import chat_info_key, chat_watchers_key, user_chat_key
 
 logger = logging.getLogger(__name__)
 
@@ -108,18 +108,6 @@ async def should_watch_chat(
         return False
 
     return True
-
-
-def chat_watchers_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:watchers"
-
-
-def chat_info_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:info"
-
-
-def user_chat_key(user_id: str, chat_id: str):
-    return f"{SERVICE_PREFIX}:user:{user_id}:chat:{chat_id}"
 
 
 async def get_chat_info(redis_client: Redis, chat_id: str) -> dict | None:
