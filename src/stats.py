@@ -24,7 +24,7 @@ async def run():
             else:
                 print(f"No info for {chat_id}: messages={num_of_messages}")
     finally:
-        await redis.close()  # Properly close Redis connection
+        await redis.aclose()  # Properly close Redis connection
 
 
 def main():
