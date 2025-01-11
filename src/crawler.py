@@ -69,7 +69,8 @@ async def register_handlers(client: TelegramClient, redis_client: Redis):
             f"{SERVICE_PREFIX}:chat:{chat_id}:messages",
             json.dumps(
                 {
-                    "sender": str(event.sender_id),
+                    "message_id": event.id,
+                    "sender": event.sender_id,
                     "message": message_text,
                     "timestamp": int(event.date.timestamp()),
                 }
