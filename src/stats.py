@@ -27,7 +27,12 @@ async def run():
         sorted_results = sorted(
             results, key=lambda x: x["num_of_messages"], reverse=True
         )
-        print(sorted_results)
+        for result in sorted_results:
+            print(
+                f"{result['name']}: "
+                f"messages={result['num_of_messages']}, "
+                f"members={result['participants_count']}"
+            )
     finally:
         await redis.aclose()  # Properly close Redis connection
 
