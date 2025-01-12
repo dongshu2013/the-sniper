@@ -3,9 +3,9 @@ import json
 import logging
 
 import asyncpg
-from redis import Redis
+from redis.asyncio import Redis
 
-from config import (
+from ..config import (
     DATABASE_URL,
     PROCESSING_INTERVAL,
     REDIS_URL,
@@ -14,13 +14,14 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
-logger.basicConfig(level=logging.INFO)
+logger.setLevel(logging.INFO)
 
 
 class MessageProcessor:
     def __init__(self):
         self.running = False
         self.interval = PROCESSING_INTERVAL
+        self.batch_size = 1000
         self.redis_client = Redis.from_url(REDIS_URL)
         self.conn = None
 
@@ -62,12 +63,13 @@ class MessageProcessor:
             logging.info(f"loaded {len(chat_keys)} chat keys")
 
             logging.info("loading messages from chats")
-            # First pipeline: Get all messages
+            # First pipeline: Get all messages using LPOP
             pipeline = self.redis_client.pipeline()
             for chat_key in chat_keys:
-                pipeline.lrange(chat_key, 0, -1)
+                pipeline.lpop(chat_key, self.batch_size)
             all_messages = await pipeline.execute()
-            logging.info(f"loaded {len(all_messages.flatten())} messages")
+            total_messages = sum(len(msgs) if msgs else 0 for msgs in all_messages)
+            logging.info(f"loaded {total_messages} messages")
 
             # Second pipeline: Process and increment counters
             logging.info(f"Processing {len(all_messages)} chats")
@@ -92,21 +94,33 @@ class MessageProcessor:
             logging.info(f"saved {len(messages_per_chat)} chats")
 
         except Exception as e:
-            logger.error(f"Error reading group data: {e}")
+            logger.error(f"Error reading chat data: {e}")
 
     async def save_one_chat(self, chat_id: int, messages: list[str]):
         values = []
         for msg in messages:
-            message_data = json.loads(msg.decode())
-            values.append(
-                (
-                    int(message_data["message_id"]),
-                    int(chat_id),
-                    message_data["message"],
-                    int(message_data["sender"]),
-                    int(message_data["timestamp"]),
+            try:
+                # Add debug logging
+                logger.debug(f"Raw message: {msg}")
+                message_data = json.loads(msg.decode())
+                values.append(
+                    (
+                        int(message_data["message_id"]),
+                        int(chat_id),
+                        message_data["message"],
+                        int(message_data["sender"]),
+                        int(message_data["timestamp"]),
+                    )
                 )
-            )
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode message: {msg}, Error: {e}")
+                continue  # Skip invalid messages
+            except Exception as e:
+                logger.error(f"Error processing message: {msg}, Error: {e}")
+                continue
+
+        if not values:  # Skip if no valid messages
+            return
 
         # Perform batch insert, ignore duplicates
         await self.conn.executemany(
