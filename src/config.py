@@ -1,4 +1,5 @@
 import os
+import time
 
 from dotenv import load_dotenv
 
@@ -23,3 +24,8 @@ def chat_info_key(chat_id: str):
 
 def user_chat_key(user_id: str, chat_id: str):
     return f"{SERVICE_PREFIX}:user:{user_id}:chat:{chat_id}"
+
+
+def chat_per_hour_stats_key(chat_id: str, metric: str):
+    hour = int(time.time() / 3600)
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:per_hour_stats:{hour}:{metric}"

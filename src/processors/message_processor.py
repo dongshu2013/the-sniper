@@ -2,41 +2,46 @@ import asyncio
 import json
 import logging
 
-import psycopg2
+import asyncpg
 from redis import Redis
 
-from config import DATABASE_URL, PROCESSING_INTERVAL, REDIS_URL, SERVICE_PREFIX
+from config import (
+    DATABASE_URL,
+    PROCESSING_INTERVAL,
+    REDIS_URL,
+    SERVICE_PREFIX,
+    chat_per_hour_stats_key,
+)
 
 logger = logging.getLogger(__name__)
+logger.basicConfig(level=logging.INFO)
 
 
 class MessageProcessor:
-    def __init__(self, batch_size=1000):
+    def __init__(self):
         self.running = False
-        self.batch_size = batch_size
         self.interval = PROCESSING_INTERVAL
         self.redis_client = Redis.from_url(REDIS_URL)
-        self.conn = psycopg2.connect(DATABASE_URL)
+        self.conn = None
 
     async def start_processing(self):
         try:
-            with self.conn.cursor() as cur:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS chat_messages (
-                        id SERIAL PRIMARY KEY,
-                        chat_id TEXT NOT NULL,
-                        message_id TEXT NOT NULL,
-                        message_text TEXT NOT NULL,
-                        sender_id TEXT NOT NULL,
-                        message_timestamp BIGINT NOT NULL,
-                        created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
-                        UNIQUE (chat_id, message_id)
-                    )
+            self.conn = await asyncpg.connect(DATABASE_URL)
+            await self.conn.execute(
                 """
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id SERIAL PRIMARY KEY,
+                    chat_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    message_text TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    message_timestamp BIGINT NOT NULL,
+                    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
+                    UNIQUE (chat_id, message_id)
                 )
-            self.conn.commit()
-        except psycopg2.Error as e:
+            """
+            )
+        except Exception as e:
             logger.error(f"Error connecting to database: {e}")
             raise
 
@@ -49,76 +54,73 @@ class MessageProcessor:
                 logger.error(f"Error in message processing: {e}")
 
     async def process_messages(self):
-        messages_by_chat = {}
-
         try:
             # Get all chat keys
+            logging.info("loading chat keys")
             chat_pattern = f"{SERVICE_PREFIX}:chat:*:messages"
             chat_keys = await self.redis_client.keys(chat_pattern)
+            logging.info(f"loaded {len(chat_keys)} chat keys")
 
+            logging.info("loading messages from chats")
+            # First pipeline: Get all messages
+            pipeline = self.redis_client.pipeline()
             for chat_key in chat_keys:
+                pipeline.lrange(chat_key, 0, -1)
+            all_messages = await pipeline.execute()
+            logging.info(f"loaded {len(all_messages.flatten())} messages")
+
+            # Second pipeline: Process and increment counters
+            logging.info(f"Processing {len(all_messages)} chats")
+            pipeline = self.redis_client.pipeline()
+            messages_per_chat = {}
+            for chat_key, messages in zip(chat_keys, all_messages):
+                if not messages:
+                    continue
                 chat_id = chat_key.decode().split(":")[2]
-                messages_by_chat[chat_id] = []
-                while True:
-                    messages = await self.redis_client.lpop(chat_key, self.batch_size)
-                    if not messages:
-                        break
-                    messages_by_chat[chat_id].extend(messages)
-                    if len(messages) < self.batch_size:
-                        break
-            total_messages = sum(
-                len(messages) for messages in messages_by_chat.values()
-            )
-            logger.info(
-                f"Retrieved {total_messages} messages "
-                f"from {len(messages_by_chat)} chats"
-            )
-            if messages_by_chat:
-                await self._save_to_database(messages_by_chat)
+                messages_per_chat[chat_id] = messages
+                pipeline.incr(
+                    chat_per_hour_stats_key(chat_id, "num_of_messages"),
+                    len(messages),
+                )
+            await pipeline.execute()
+            logging.info(f"processed {len(messages_per_chat)} chats")
+
+            logging.info(f"Saving {len(messages_per_chat)} chats")
+            async with self.conn.transaction():
+                for chat_id, messages in messages_per_chat.items():
+                    await self.save_one_chat(chat_id, messages)
+            logging.info(f"saved {len(messages_per_chat)} chats")
 
         except Exception as e:
             logger.error(f"Error reading group data: {e}")
-            return {}
 
-    async def _save_to_database(self, messages_by_chat):
-        try:
-            with self.conn.cursor() as cur:
-                for chat_id, messages in messages_by_chat.items():
-                    values = []
-                    for msg in messages:
-                        message_data = json.loads(msg.decode())
-                        values.append(
-                            (
-                                int(message_data["message_id"]),
-                                int(chat_id),
-                                message_data["message"],
-                                int(message_data["sender"]),
-                                int(message_data["timestamp"]),
-                            )
-                        )
-
-                    # Perform batch insert, ignore duplicates
-                    cur.executemany(
-                        """
-                        INSERT INTO chat_messages
-                            (message_id, chat_id, message_text,
-                             sender_id, message_timestamp)
-                        VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (chat_id, message_id) DO NOTHING
-                        """,
-                        values,
-                    )
-                self.conn.commit()
-                logger.info(
-                    f"Successfully inserted {len(messages)} messages for chat {chat_id}"
+    async def save_one_chat(self, chat_id: int, messages: list[str]):
+        values = []
+        for msg in messages:
+            message_data = json.loads(msg.decode())
+            values.append(
+                (
+                    int(message_data["message_id"]),
+                    int(chat_id),
+                    message_data["message"],
+                    int(message_data["sender"]),
+                    int(message_data["timestamp"]),
                 )
+            )
 
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Failed to save data to database: {e}")
-            raise
+        # Perform batch insert, ignore duplicates
+        await self.conn.executemany(
+            """
+            INSERT INTO chat_messages
+                (message_id, chat_id, message_text,
+                    sender_id, message_timestamp)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (chat_id, message_id) DO NOTHING
+            """,
+            values,
+        )
 
     async def stop_processing(self):
         self.running = False
         if self.conn:
-            self.conn.close()
+            await self.conn.close()
