@@ -33,6 +33,11 @@ async def run():
                 f"messages={result['num_of_messages']}, "
                 f"members={result['participants_count']}"
             )
+
+        info_pattern = f"{SERVICE_PREFIX}:chat:*:info"
+        info_keys = await redis.keys(info_pattern)
+        print(f"Total chat with info: {len(info_keys)}")
+        print(f"Total chats with messages: {len(sorted_results)}")
     finally:
         await redis.aclose()  # Properly close Redis connection
 
