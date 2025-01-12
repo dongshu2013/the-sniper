@@ -21,7 +21,6 @@ class MessageProcessor:
     def __init__(self):
         self.running = False
         self.interval = PROCESSING_INTERVAL
-        self.batch_size = 1000
         self.redis_client = Redis.from_url(REDIS_URL)
         self.conn = None
 
@@ -64,12 +63,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
             logging.info(f"loaded {len(chat_keys)} chat keys")
 
             logging.info("loading messages from chats")
-            # First pipeline: Get all messages using LPOP
+            # First pipeline: Get all messages using LPOP and delete the keys
             pipeline = self.redis_client.pipeline()
             for chat_key in chat_keys:
-                pipeline.lpop(chat_key, self.batch_size)
-            all_messages = await pipeline.execute()
+                pipeline.lrange(chat_key, 0, -1)
+                pipeline.delete(chat_key)  # Delete the key after reading
+            results = await pipeline.execute()
+            # Split results into messages and delete confirmations
+            all_messages = results[::2]  # Every other result is messages
             total_messages = sum(len(msgs) if msgs else 0 for msgs in all_messages)
+            logging.info(f"loaded and cleared {len(chat_keys)} chat keys")
             logging.info(f"loaded {total_messages} messages")
 
             # Second pipeline: Process and increment counters
