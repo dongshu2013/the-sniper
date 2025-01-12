@@ -30,17 +30,17 @@ class MessageProcessor:
             self.conn = await asyncpg.connect(DATABASE_URL)
             await self.conn.execute(
                 """
-                CREATE TABLE IF NOT EXISTS chat_messages (
-                    id SERIAL PRIMARY KEY,
-                    chat_id TEXT NOT NULL,
-                    message_id TEXT NOT NULL,
-                    message_text TEXT NOT NULL,
-                    sender_id TEXT NOT NULL,
-                    message_timestamp BIGINT NOT NULL,
-                    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW()),
-                    UNIQUE (chat_id, message_id)
-                )
-            """
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id SERIAL PRIMARY KEY,
+    chat_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    message_text TEXT NOT NULL,
+    sender_id INTEGER NOT NULL,
+    message_timestamp BIGINT NOT NULL,
+    created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
+    UNIQUE (chat_id, message_id)
+)
+"""
             )
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")
