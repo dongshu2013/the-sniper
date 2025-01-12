@@ -27,15 +27,16 @@ class MessageProcessor:
 
     async def start_processing(self):
         try:
+            logging.info("Connecting to database")
             self.conn = await asyncpg.connect(DATABASE_URL)
             await self.conn.execute(
                 """
 CREATE TABLE IF NOT EXISTS chat_messages (
     id SERIAL PRIMARY KEY,
-    chat_id INTEGER NOT NULL,
-    message_id INTEGER NOT NULL,
+    chat_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
     message_text TEXT NOT NULL,
-    sender_id INTEGER NOT NULL,
+    sender_id TEXT NOT NULL,
     message_timestamp BIGINT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)
@@ -105,10 +106,10 @@ CREATE TABLE IF NOT EXISTS chat_messages (
                 message_data = json.loads(msg.decode())
                 values.append(
                     (
-                        int(message_data["message_id"]),
-                        int(chat_id),
+                        str(message_data["message_id"]),
+                        str(chat_id),
                         message_data["message"],
-                        int(message_data["sender"]),
+                        str(message_data["sender"]),
                         int(message_data["timestamp"]),
                     )
                 )
