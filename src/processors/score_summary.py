@@ -42,7 +42,7 @@ Output Instructions:
 - You will need to output and only output a JSON object with the following fields:
   - score: The score of the chat group from 0 to 10.
   - summary: A short summary of what happened in the chat group and why you give the score.
-  - reason: The reason why you give the score.
+  - highlights: Some highlights from user's messages from the chat group, separated by comma.
 """
 # format on
 
@@ -52,8 +52,11 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+MIN_SUMMARY_INTERVAL = 3600 * 6  # every 6 hours
+
+
 class ChatScoreSummaryProcessor:
-    def __init__(self, interval: int = 3600 * 6):  # every 6 hours
+    def __init__(self, interval: int = MIN_SUMMARY_INTERVAL):
         self.client = AgentClient()
         self.pg_conn = None
         self.redis_client = Redis.from_url(REDIS_URL)
@@ -72,7 +75,7 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
     chat_id VARCHAR(255) NOT NULL,
     score INTEGER NOT NULL,
     summary TEXT NOT NULL,
-    reason TEXT NOT NULL,
+    highlights TEXT NOT NULL,
     messages_count INTEGER NOT NULL,
     unique_users_count INTEGER NOT NULL,
     last_message_timestamp BIGINT NOT NULL,
@@ -174,14 +177,14 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         await self.pg_conn.execute(
             """
             INSERT INTO chat_score_summaries
-            (chat_id, score, summary, reason, messages_count,
+            (chat_id, score, summary, highlights, messages_count,
              unique_users_count, last_message_timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             str(chat_id),
             int(result["score"]),
             result["summary"],
-            result["reason"],
+            result["highlights"],
             len(messages),
             len(set(msg["sender_id"] for msg in messages)),
             current_time,
