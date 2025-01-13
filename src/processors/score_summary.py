@@ -48,6 +48,9 @@ Output Instructions:
 
 MIN_MESSAGES_TO_PROCESS = 10
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 class ChatScoreSummaryProcessor:
     def __init__(self, interval: int = 3600 * 6):  # every 6 hours
@@ -126,14 +129,18 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
 
     async def evaluate(self, chat_id: str, current_time: int) -> None:
         """Build activity report for a chat group."""
+        logger.info(f"Evaluating chat {chat_id} at {current_time}")
         messages = await self.get_unprocessed_messages(chat_id, current_time)
         chat_info = json.loads(await self.redis_client.get(chat_info_key(chat_id)))
         if not messages or len(messages) < MIN_MESSAGES_TO_PROCESS:
-            logging.info(
+            logger.info(
                 f"Not enough messages to process for chat {chat_info['name']} to summarize, skipping..."
             )
             return
 
+        logger.info(
+            f"Found {len(messages)} messages to process for chat {chat_info['name']}"
+        )
         # Prepare conversation history for AI
         conversation_text = self._prepare_conversations(messages)
         response = await self.client.chat_completion(
@@ -148,10 +155,11 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         try:
             result = json.loads(response["choices"][0]["message"]["content"])
         except Exception as e:
-            logger.error(f"Error parsing AI response: {e}")
+            logger.error(f"Error parsing AI response for chat {chat_id}: {e}")
             return
 
         # Store the report
+        logger.info(f"Storing report for chat {chat_id} at {current_time}")
         await self.pg_conn.execute(
             """
             INSERT INTO chat_score_summaries
