@@ -45,14 +45,14 @@ async def run():
             chat_infos[chat_id]["pending_messages"] = pending_messages or 0
 
         sorted_results = sorted(
-            chat_infos.values(), key=lambda x: x["pending_messages"], reverse=True
+            chat_infos.values(), key=lambda x: x["messages_24h"], reverse=True
         )
         for result in sorted_results:
             print(
                 f"{result['name']}: "
+                f"messages_24h={result['messages_24h']}, "
                 f"pending_messages={result['pending_messages']}, "
                 f"members={result['participants_count']}, "
-                f"messages_24h={result['messages_24h']}"
             )
 
         info_pattern = f"{SERVICE_PREFIX}:chat:*:info"
