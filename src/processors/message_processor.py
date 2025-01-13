@@ -29,6 +29,8 @@ class MessageProcessor:
             logging.info("Connecting to database")
             self.conn = await asyncpg.connect(DATABASE_URL)
             await self.conn.execute(
+                # flake8: noqa
+                # format off
                 """
 CREATE TABLE IF NOT EXISTS chat_messages (
     id SERIAL PRIMARY KEY,
@@ -40,7 +42,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)
 )
+
+-- Index for querying messages by chat_id
+-- CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id);
+
+-- Index for timestamp-based queries within a chat
+-- CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_timestamp ON chat_messages(chat_id, message_timestamp DESC);
+
+-- Index for sender-based queries
+-- CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_id ON chat_messages(sender_id);
 """
+                # format on
             )
         except Exception as e:
             logger.error(f"Error connecting to database: {e}")

@@ -13,6 +13,10 @@ SERVICE_PREFIX = "the_sinper_bot"
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/postgres")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+OPENROUTER_API_URL: str = "https://openrouter.ai/api/v1/"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
+
 
 def chat_watchers_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:watchers"
