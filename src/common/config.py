@@ -1,5 +1,6 @@
 import os
 import time
+from enum import Enum
 
 from dotenv import load_dotenv
 
@@ -16,6 +17,13 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 OPENROUTER_API_URL: str = "https://openrouter.ai/api/v1/"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
+
+
+class ChatStatus(Enum):
+    ACTIVE = "active"
+    NOT_ENOUGH_PARTICIPANTS = "not_enough_participants"
+    NOT_RELATED_TOPIC = "not_related_topic"
+    ENOUGH_WATCHERS = "enough_watchers"
 
 
 def chat_watchers_key(chat_id: str):

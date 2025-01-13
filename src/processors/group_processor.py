@@ -2,25 +2,23 @@ import asyncio
 import json
 import logging
 import time
-from enum import Enum
 
 from redis.asyncio import Redis
 from telethon import TelegramClient, types
 
-from src.common.config import REDIS_URL, chat_info_key, chat_watchers_key, user_chat_key
+from src.common.config import (
+    REDIS_URL,
+    ChatStatus,
+    chat_info_key,
+    chat_watchers_key,
+    user_chat_key,
+)
 
 logger = logging.getLogger(__name__)
 
 
 MIN_PARTICIPANTS = 50
 MIN_WATCHERS = 2
-
-
-class ChatStatus(Enum):
-    ACTIVE = "active"
-    NOT_ENOUGH_PARTICIPANTS = "not_enough_participants"
-    NOT_RELATED_TOPIC = "not_related_topic"
-    ENOUGH_WATCHERS = "enough_watchers"
 
 
 class ChatProcessor:
