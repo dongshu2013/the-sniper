@@ -24,7 +24,7 @@ async def run():
             chat_info = await redis.get(chat_info_key(chat_id))
             if chat_info:
                 chat_infos[chat_id] = json.loads(chat_info)
-                chat_infos[chat_id]["num_of_messages"] = num_of_messages
+                chat_infos[chat_id]["pending_messages"] = num_of_messages
             else:
                 chat_infos[chat_id] = {
                     "chat_id": chat_id,
@@ -33,12 +33,12 @@ async def run():
         await get_total_messages(pg_conn, chat_infos)
 
         sorted_results = sorted(
-            chat_infos.values(), key=lambda x: x["num_of_messages"], reverse=True
+            chat_infos.values(), key=lambda x: x["pending_messages"], reverse=True
         )
         for result in sorted_results:
             print(
                 f"{result['name']}: "
-                f"messages={result['num_of_messages']}, "
+                f"pending_messages={result['pending_messages']}, "
                 f"members={result['participants_count']}, "
                 f"messages_24h={result['messages_24h']}"
             )
