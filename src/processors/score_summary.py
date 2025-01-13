@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 from asyncio.log import logger
 from datetime import datetime
 
@@ -55,6 +56,7 @@ class ChatScoreSummaryProcessor:
         self.redis_client = Redis.from_url(REDIS_URL)
         self.interval = interval
         self.running = False
+        self.last_processed_time = 0
 
     async def create_tables(self):
         """Create necessary tables if they don't exist."""
@@ -86,17 +88,45 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         # Connect to database and create table if it doesn't exist
         self.pg_conn = await asyncpg.connect(DATABASE_URL)
         await self.create_tables()
+        self.last_processed_time = await self._get_last_message_timestamp()
 
         while self.running:
             try:
-                await self.evaluate()
+                await self.evaluate_all()
                 await asyncio.sleep(self.interval)
             except Exception as e:
                 logger.error(f"Error in group processing: {e}")
 
-    async def evaluate(self, chat_id: str) -> None:
+    async def _get_last_message_timestamp(self) -> int:
+        """Get the timestamp of the most recent message, or current time minus interval if no messages."""
+        result = await self.pg_conn.fetchval(
+            "SELECT MAX(message_timestamp) FROM chat_messages"
+        )
+        if result is None:
+            return int(time.time()) - self.interval
+        return int(result)
+
+    async def evaluate_all(self) -> None:
+        """Evaluate all chat groups that have messages."""
+        # Get all unique chat IDs
+        current_time = int(time.time())
+        chat_ids = await self.pg_conn.fetch(
+            "SELECT DISTINCT chat_id FROM chat_messages WHERE message_timestamp > $1 AND message_timestamp < $2",
+            self.last_processed_time,
+            current_time,
+        )
+
+        # Process each chat group
+        for record in chat_ids:
+            try:
+                await self.evaluate(str(record["chat_id"]), current_time)
+            except Exception as e:
+                logger.error(f"Error processing chat {record['chat_id']}: {e}")
+        self.last_processed_time = current_time
+
+    async def evaluate(self, chat_id: str, current_time: int) -> None:
         """Build activity report for a chat group."""
-        messages = await self.get_unprocessed_messages(chat_id)
+        messages = await self.get_unprocessed_messages(chat_id, current_time)
         chat_info = json.loads(await self.redis_client.get(chat_info_key(chat_id)))
         if not messages or len(messages) < MIN_MESSAGES_TO_PROCESS:
             logging.info(
@@ -135,7 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
             result["reason"],
             len(messages),
             len(set(msg["sender_id"] for msg in messages)),
-            max(msg["message_timestamp"] for msg in messages),
+            current_time,
         )
 
     async def stop_processing(self):
@@ -143,22 +173,18 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         if self.pg_conn:
             await self.pg_conn.close()
 
-    async def get_unprocessed_messages(self, chat_id: int) -> list:
+    async def get_unprocessed_messages(self, chat_id: int, current_time: int) -> list:
         query = """
-            WITH last_processed AS (
-                SELECT last_message_timestamp
-                FROM chat_score_summaries
-                WHERE chat_id = $1
-                ORDER BY last_message_timestamp DESC
-                LIMIT 1
-            )
             SELECT sender_id, message_text, message_timestamp
             FROM chat_messages
             WHERE chat_id = $1
-            AND message_timestamp > COALESCE((SELECT last_message_timestamp FROM last_processed), 0)
+            AND message_timestamp > $2
+            AND message_timestamp < $3
             ORDER BY message_timestamp ASC
         """
-        messages = await self.pg_conn.fetch(query, chat_id)
+        messages = await self.pg_conn.fetch(
+            query, chat_id, self.last_processed_time, current_time
+        )
         return [dict(msg) for msg in messages]
 
     def _prepare_conversations(self, messages: list) -> str:
