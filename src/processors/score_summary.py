@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
     reason TEXT NOT NULL,
     messages_count INTEGER NOT NULL,
     unique_users_count INTEGER NOT NULL,
-    last_message_timestamp TIMESTAMP NOT NULL,
+    last_message_timestamp BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(chat_id, last_message_timestamp)
 );
