@@ -6,7 +6,8 @@ import time
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
-from src.config import (
+from src.common.bot_client import TelegramListener
+from src.common.config import (
     PROCESSING_INTERVAL,
     REDIS_URL,
     SERVICE_PREFIX,
@@ -14,9 +15,7 @@ from src.config import (
     chat_messages_key,
     user_chat_key,
 )
-
-from .bot_client import TelegramListener
-from .processors.group_processor import ChatProcessor
+from src.processors.group_processor import ChatProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)

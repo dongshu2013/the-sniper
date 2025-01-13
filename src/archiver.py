@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from .processors.message_processor import MessageProcessor
+from src.processors.message_processor import MessageProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)

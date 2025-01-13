@@ -5,7 +5,7 @@ import logging
 import asyncpg
 from redis.asyncio import Redis
 
-from ..config import (
+from src.common.config import (
     DATABASE_URL,
     PROCESSING_INTERVAL,
     REDIS_URL,

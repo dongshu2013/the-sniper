@@ -7,8 +7,8 @@ from datetime import datetime
 
 import asyncpg
 
-from src.agent_client import AgentClient
-from src.config import DATABASE_URL
+from src.common.agent_client import AgentClient
+from src.common.config import DATABASE_URL
 
 # flake8: noqa
 # format off

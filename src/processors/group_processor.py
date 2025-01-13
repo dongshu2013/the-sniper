@@ -7,7 +7,7 @@ from enum import Enum
 from redis.asyncio import Redis
 from telethon import TelegramClient, types
 
-from src.config import REDIS_URL, chat_info_key, chat_watchers_key, user_chat_key
+from src.common.config import REDIS_URL, chat_info_key, chat_watchers_key, user_chat_key
 
 logger = logging.getLogger(__name__)
 
