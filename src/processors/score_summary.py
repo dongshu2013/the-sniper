@@ -223,6 +223,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         except json.JSONDecodeError:
             # If that fails, try to extract JSON from markdown
             if result.startswith("```json"):
+                logger.info("Found JSON in markdown")
                 # Remove markdown formatting
                 cleaned_result = result.replace("```json\n", "").replace("\n```", "")
                 try:
@@ -230,6 +231,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
                 except json.JSONDecodeError:
                     pass
 
+            logger.info("Trying regex to extract JSON")
             # Last resort: try to extract using regex
             import re
 
@@ -238,11 +240,15 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
             reason_match = re.search(r'reason"?\s*:\s*"([^"]+)"', result)
 
             return {
-                "score": float(score_match.group(1)) if score_match else 0,
+                "score": float(score_match.group(1)) if score_match is not None else 0,
                 "summary": (
-                    summary_match.group(1) if summary_match else "No summary available"
+                    summary_match.group(1)
+                    if summary_match is not None
+                    else "No summary available"
                 ),
                 "reason": (
-                    reason_match.group(1) if reason_match else "No reason available"
+                    reason_match.group(1)
+                    if reason_match is not None
+                    else "No reason available"
                 ),
             }
