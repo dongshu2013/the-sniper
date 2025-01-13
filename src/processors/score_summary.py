@@ -163,7 +163,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
             ]
         )
         try:
-            result = json.loads(response["choices"][0]["message"]["content"])
+            result = response["choices"][0]["message"]["content"]
+            result = self._parse_ai_response(result)
         except Exception as e:
             logger.error(f"Error parsing AI response for chat {chat_id}: {e}")
             return
@@ -214,3 +215,34 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
                 f"[{timestamp}] User {msg['sender_id']}: {msg['message_text']}"
             )
         return "\n".join(conversation_lines)
+
+    def _parse_ai_response(self, result: str) -> dict:
+        try:
+            # First try direct JSON parsing
+            return json.loads(result)
+        except json.JSONDecodeError:
+            # If that fails, try to extract JSON from markdown
+            if result.startswith("```json"):
+                # Remove markdown formatting
+                cleaned_result = result.replace("```json\n", "").replace("\n```", "")
+                try:
+                    return json.loads(cleaned_result)
+                except json.JSONDecodeError:
+                    pass
+
+            # Last resort: try to extract using regex
+            import re
+
+            score_match = re.search(r'score"?\s*:\s*(\d+\.?\d*)', result)
+            summary_match = re.search(r'summary"?\s*:\s*"([^"]+)"', result)
+            reason_match = re.search(r'reason"?\s*:\s*"([^"]+)"', result)
+
+            return {
+                "score": float(score_match.group(1)) if score_match else 0,
+                "summary": (
+                    summary_match.group(1) if summary_match else "No summary available"
+                ),
+                "reason": (
+                    reason_match.group(1) if reason_match else "No reason available"
+                ),
+            }
