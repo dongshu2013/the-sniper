@@ -69,8 +69,8 @@ class ChatScoreSummaryProcessor:
             """
 CREATE TABLE IF NOT EXISTS chat_score_summaries (
     id SERIAL PRIMARY KEY,
-    chat_id BIGINT NOT NULL,
-    score NUMERIC(3,1) NOT NULL,
+    chat_id VARCHAR(255) NOT NULL,
+    score INTEGER NOT NULL,
     summary TEXT NOT NULL,
     reason TEXT NOT NULL,
     messages_count INTEGER NOT NULL,
@@ -178,8 +178,8 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
              unique_users_count, last_message_timestamp)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            chat_id,
-            result["score"],
+            str(chat_id),
+            int(result["score"]),
             result["summary"],
             result["reason"],
             len(messages),
