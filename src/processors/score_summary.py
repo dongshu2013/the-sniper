@@ -1,14 +1,14 @@
 import asyncio
 import json
 import logging
-import time
 from asyncio.log import logger
 from datetime import datetime
 
 import asyncpg
+from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
-from src.common.config import DATABASE_URL
+from src.common.config import DATABASE_URL, REDIS_URL, chat_info_key
 
 # flake8: noqa
 # format off
@@ -45,11 +45,14 @@ Output Instructions:
 """
 # format on
 
+MIN_MESSAGES_TO_PROCESS = 10
+
 
 class ChatScoreSummaryProcessor:
     def __init__(self, interval: int = 3600 * 6):  # every 6 hours
         self.client = AgentClient()
         self.pg_conn = None
+        self.redis_client = Redis.from_url(REDIS_URL)
         self.interval = interval
         self.running = False
 
@@ -72,8 +75,8 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
     UNIQUE(chat_id, last_message_timestamp)
 );
 
--- Create index on chat_id and version for faster unique constraint checks
--- CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_summaries(chat_id, last_message_timestamp);
+-- Create index on chat_id and last_message_timestamp for faster unique constraint checks
+CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_summaries(chat_id, last_message_timestamp);
         """
             # format on
         )
@@ -93,13 +96,12 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
 
     async def evaluate(self, chat_id: str) -> None:
         """Build activity report for a chat group."""
-        # Get the latest report version
-        last_processed_time = int(time.time())
-
-        # Get messages since last report
-        messages = await self.get_unprocessed_messages(chat_id, last_processed_time)
-        if not messages:
-            logging.info(f"No new messages to process for chat {chat_id}, skipping...")
+        messages = await self.get_unprocessed_messages(chat_id)
+        chat_info = json.loads(await self.redis_client.get(chat_info_key(chat_id)))
+        if not messages or len(messages) < MIN_MESSAGES_TO_PROCESS:
+            logging.info(
+                f"Not enough messages to process for chat {chat_info['name']} to summarize, skipping..."
+            )
             return
 
         # Prepare conversation history for AI
@@ -141,21 +143,22 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
         if self.pg_conn:
             await self.pg_conn.close()
 
-    async def get_unprocessed_messages(
-        self, chat_id: int, last_processed_time: int
-    ) -> list:
+    async def get_unprocessed_messages(self, chat_id: int) -> list:
         query = """
+            WITH last_processed AS (
+                SELECT last_message_timestamp
+                FROM chat_score_summaries
+                WHERE chat_id = $1
+                ORDER BY last_message_timestamp DESC
+                LIMIT 1
+            )
             SELECT sender_id, message_text, message_timestamp
             FROM chat_messages
             WHERE chat_id = $1
+            AND message_timestamp > COALESCE((SELECT last_message_timestamp FROM last_processed), 0)
+            ORDER BY message_timestamp ASC
         """
-        params = [chat_id]
-
-        if last_processed_time:
-            query += " AND message_timestamp > $2"
-            params.append(last_processed_time)
-        query += " ORDER BY message_timestamp ASC"
-        messages = await self.pg_conn.fetch(query, *params)
+        messages = await self.pg_conn.fetch(query, chat_id)
         return [dict(msg) for msg in messages]
 
     def _prepare_conversations(self, messages: list) -> str:
