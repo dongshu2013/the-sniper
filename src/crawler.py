@@ -60,9 +60,7 @@ async def register_handlers(client: TelegramClient):
         chat_id = str(event.chat_id)
         message_id = str(event.id)
         me = await client.get_me()
-        should_process = await should_process_message(
-            redis_client, chat_id, str(me.id), message_id
-        )
+        should_process = await should_process_message(chat_id, me.id, message_id)
         if not should_process:
             return
 

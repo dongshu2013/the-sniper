@@ -11,6 +11,8 @@ API_HASH = os.getenv("TG_API_HASH")
 PHONE = os.getenv("TG_PHONE")
 PROCESSING_INTERVAL = int(os.getenv("PROCESSING_INTERVAL", 300))
 SERVICE_PREFIX = "the_sinper_bot"
+SESSION_NAME = os.getenv("SESSION_NAME")
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/postgres")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
