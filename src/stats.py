@@ -5,7 +5,7 @@ import time
 import asyncpg
 from redis.asyncio import Redis
 
-from src.config import (
+from src.common.config import (
     DATABASE_URL,
     REDIS_URL,
     SERVICE_PREFIX,
