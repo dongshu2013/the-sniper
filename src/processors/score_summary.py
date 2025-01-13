@@ -47,7 +47,7 @@ Output Instructions:
 
 
 class ChatScoreSummaryProcessor:
-    def __init__(self, interval: int):
+    def __init__(self, interval: int = 3600 * 6):  # every 6 hours
         self.client = AgentClient()
         self.pg_conn = None
         self.interval = interval
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS chat_score_summaries (
     unique_users_count INTEGER NOT NULL,
     last_message_timestamp TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(chat_id, version)
+    UNIQUE(chat_id, last_message_timestamp)
 );
 
 -- Create index on chat_id and version for faster unique constraint checks
