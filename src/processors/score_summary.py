@@ -92,18 +92,21 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         self.pg_conn = await asyncpg.connect(DATABASE_URL)
         await self.create_tables()
         self.last_processed_time = await self._get_last_message_timestamp()
+        logger.info(f"Last processed time: {self.last_processed_time}")
 
         while self.running:
             try:
+                logger.info(
+                    f"Processing score summaries for all chats at {self.last_processed_time}"
+                )
                 await self.evaluate_all()
                 await asyncio.sleep(self.interval)
             except Exception as e:
                 logger.error(f"Error in group processing: {e}")
 
     async def _get_last_message_timestamp(self) -> int:
-        """Get the timestamp of the most recent message, or current time minus interval if no messages."""
         result = await self.pg_conn.fetchval(
-            "SELECT MAX(message_timestamp) FROM chat_messages"
+            "SELECT MAX(last_message_timestamp) FROM chat_score_summaries"
         )
         if result is None:
             return int(time.time()) - self.interval
@@ -114,14 +117,21 @@ CREATE INDEX IF NOT EXISTS idx_chat_score_summaries_chat_version ON chat_score_s
         # Get all unique chat IDs
         current_time = int(time.time())
         chat_ids = await self.pg_conn.fetch(
-            "SELECT DISTINCT chat_id FROM chat_messages WHERE message_timestamp > $1 AND message_timestamp < $2",
+            """
+            SELECT DISTINCT chat_id FROM chat_messages
+            WHERE message_timestamp > $1 AND message_timestamp < $2
+            """,
             self.last_processed_time,
             current_time,
         )
+        if not chat_ids:
+            logger.info("No chat groups to process")
+            return
 
         # Process each chat group
         for record in chat_ids:
             try:
+                logger.info(f"Evaluating chat {record['chat_id']} at {current_time}")
                 await self.evaluate(str(record["chat_id"]), current_time)
             except Exception as e:
                 logger.error(f"Error processing chat {record['chat_id']}: {e}")
