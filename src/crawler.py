@@ -11,6 +11,7 @@ from src.config import (
     REDIS_URL,
     SERVICE_PREFIX,
     ChatStatus,
+    chat_messages_key,
     user_chat_key,
 )
 
@@ -69,7 +70,7 @@ async def register_handlers(client: TelegramClient):
         pipelines = redis_client.pipeline()
         pipelines.set(message_seen_key(chat_id, message_id), int(time.time()))
         pipelines.lpush(
-            f"{SERVICE_PREFIX}:chat:{chat_id}:messages",
+            chat_messages_key(chat_id),
             json.dumps(
                 {
                     "message_id": event.id,

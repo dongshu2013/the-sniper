@@ -33,3 +33,7 @@ def user_chat_key(user_id: str, chat_id: str):
 def chat_per_hour_stats_key(chat_id: str, metric: str):
     hour = int(time.time() / 3600)
     return f"{SERVICE_PREFIX}:chat:{chat_id}:per_hour_stats:{hour}:{metric}"
+
+
+def chat_messages_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:messages"
