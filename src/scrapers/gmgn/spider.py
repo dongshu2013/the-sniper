@@ -45,27 +45,35 @@ class GmgnSpider(BaseSpider):
         attempts = 0
         
         while attempts < max_attempts:
-            scroll_distance = random.randint(300, 700)
-            await page.evaluate(f'window.scrollBy(0, {scroll_distance})')
-            await page.wait_for_timeout(random.randint(500, 1500))
+            # 1. 等待新内容加载
+            await page.wait_for_selector("div.g-table-row", timeout=5000)
             
-            new_height = await page.evaluate('document.body.scrollHeight')
-            if new_height == last_height:
-                # 再尝试一次确保真的到底了
+            # 2. 获取当前可见的所有行
+            rows = await page.query_selector_all("div.g-table-row")
+            current_count = len(rows)
+            
+            # 3. 滚动并等待新内容
+            scroll_distance = random.randint(300, 700) 
+            await page.evaluate(f'window.scrollBy(0, {scroll_distance})')
+            await page.wait_for_timeout(random.randint(1000, 2000))
+            
+            # 4. 检查是否有新内容加载
+            new_rows = await page.query_selector_all("div.g-table-row")
+            if len(new_rows) == current_count:
+                # 再次确认是否真的到底
                 await page.wait_for_timeout(2000)
-                final_height = await page.evaluate('document.body.scrollHeight')
-                if final_height == new_height:
+                final_rows = await page.query_selector_all("div.g-table-row")
+                if len(final_rows) == current_count:
                     break
                     
-            last_height = new_height
             attempts += 1
             
     async def _parse_content(self, content):
         items = []
         selector = Selector(text=content)
         
-        # 匹配具有 cursor-pointer 的表格行
-        meme_cards = selector.xpath("//div[contains(@class, 'g-table-row') and contains(@class, 'cursor-pointer')]")
+        # 使用更精确的XPath选择器
+        meme_cards = selector.xpath("//div[contains(@class, 'g-table-row') and contains(@class, 'cursor-pointer') and not(contains(@style, 'display: none'))]")
         
         self.logger.info(f"Found {len(meme_cards)} meme cards")
         
