@@ -45,6 +45,7 @@ class MessageQueueProcessor:
     async def process_batch(self) -> int:
         messages: List[Dict] = []
 
+        logger.info("loading messages from redis")
         # Get batch of messages from Redis in a single operation
         raw_messages = await self.redis_client.rpop("message_queue", self.batch_size)
         if not raw_messages:
@@ -55,6 +56,7 @@ class MessageQueueProcessor:
             raw_messages = [raw_messages]
 
         # Process messages
+        logger.info(f"will process {len(raw_messages)} raw messages")
         for message in raw_messages:
             try:
                 messages.append(ChatMessage.model_validate_json(message))
@@ -65,6 +67,7 @@ class MessageQueueProcessor:
         if not messages:
             return 0
 
+        logger.info(f"will process {len(messages)} messages")
         try:
             await self.pg_conn.executemany(
                 """
