@@ -83,7 +83,7 @@ async def get_gmgn_24h_ranked_groups():
 
 async def import_gmgn_24h_ranked_groups():
     try:
-        with open("data/gmgn_24h_ranked.json", "r") as f:
+        with open("data/gmgn_24h_vol_ranked.json", "r") as f:
             data = json.load(f)
             items = data.get("data", {}).get("rank", [])
             logger.info(f"Found {len(items)} items in local file")
