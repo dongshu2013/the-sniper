@@ -51,16 +51,16 @@ def normalize_score(value, max_value, min_value=0):
 
 def calculate_score(scores):
     if not scores:
-        return 0
+        return {}
 
     # Get max values for normalization
-    max_user_count = max(score["unique_user_count"] for score in scores)
-    max_msg_count = max(score["messages_count"] for score in scores)
+    max_user_count = max(score["unique_users_count"] for score in scores.values())
+    max_msg_count = max(score["messages_count"] for score in scores.values())
 
-    final_scores = 0
+    final_scores = {}
     for chat_id, score in scores.items():
         # Normalize unique users (0-10)
-        normalized_users = normalize_score(score["unique_user_count"], max_user_count)
+        normalized_users = normalize_score(score["unique_users_count"], max_user_count)
         normalized_messages = normalize_score(score["messages_count"], max_msg_count)
         content_quality = float(score["score"])
         chat_score = (
@@ -80,6 +80,7 @@ WHERE last_message_timestamp > $1
 ORDER BY score DESC
 LIMIT 10
 """
+    logger.info(f"Getting chat scores and summary")
     last_message_ts = int(time.time() - MIN_SUMMARY_INTERVAL)
     results = await pg_conn.fetch(query, last_message_ts)
     chat_scores = {}
@@ -95,19 +96,24 @@ LIMIT 10
             "unique_users_count": unique_users_count,
         }
         final_results[chat_id] = {"summary": result["summary"]}
+
+    logger.info(f"Calculating final scores")
     final_scores = calculate_score(chat_scores)
     for chat_id, score in final_scores.items():
         final_results[chat_id]["final_score"] = score
 
-    # Format the results into text
+    logger.info(f"Formatting leaderboard text")
     leaderboard_text = ""
     for chat_id, result in final_results.items():
         leaderboard_text += (
             f"{chat_id} (Score: {result['final_score']:.1f}): {result['summary']}\n"
         )
 
+    logger.info(f"Formatting user prompt")
     user_prompts = LEADERBOARD_PROMPT.format(leaderboard_text=leaderboard_text)
     logger.info(f"User prompt: {user_prompts}")
+
+    logger.info(f"Sending to agent")
     response = await agent.chat_completion(
         [
             {"role": "system", "content": SYSTME_PROMPT},
@@ -149,6 +155,18 @@ def tweet(text: str):
     client.create_tweet(text=text)
 
 
+tweet_schedule = {
+    9: tweet_9am,
+    12: tweet_12pm,
+    15: tweet_3pm,
+    18: tweet_6pm,
+    21: tweet_9pm,
+    0: tweet_12am,
+    3: tweet_3am,
+    6: tweet_6am,
+}
+
+
 async def run(dry_run: bool = False, target_hour: int = None):
     # Get current time in UTC
     utc_now = datetime.now(timezone.utc)
@@ -159,20 +177,7 @@ async def run(dry_run: bool = False, target_hour: int = None):
     if target_hour is not None:
         current_hour = target_hour
 
-    # Create a Redis key for the current hour and date
     redis_key = f"doxx_tweet:{current_date}:{current_hour}"
-
-    # Map hours to tweet functions
-    tweet_schedule = {
-        9: tweet_9am,
-        12: tweet_12pm,
-        15: tweet_3pm,
-        18: tweet_6pm,
-        21: tweet_9pm,
-        0: tweet_12am,
-        3: tweet_3am,
-        6: tweet_6am,
-    }
 
     # Check if we should tweet
     if current_hour in tweet_schedule:
