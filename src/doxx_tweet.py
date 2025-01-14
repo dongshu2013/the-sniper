@@ -15,7 +15,6 @@ import time
 from datetime import datetime
 
 import asyncpg
-import pytz
 import tweepy
 from redis.asyncio import Redis
 
@@ -160,7 +159,7 @@ def tweet(text: str):
 
 async def run(dry_run: bool = False):
     # Get current time in UTC
-    utc_now = datetime.now(pytz.UTC)
+    utc_now = datetime.now(datetime.timezone.utc)
     current_hour = utc_now.hour
     current_date = utc_now.date().isoformat()
     pg_conn = await asyncpg.connect(DATABASE_URL)
