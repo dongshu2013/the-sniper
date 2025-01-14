@@ -4,7 +4,6 @@ import logging
 
 import aiohttp
 import asyncpg
-import requests
 from redis.asyncio import Redis
 
 from src.common.config import DATABASE_URL, PENDING_TG_GROUPS_KEY, REDIS_URL
