@@ -98,6 +98,11 @@ class EntityImporter:
         self.running = False
 
     async def process(self):
+        # Collect entities from the async generator
+        entities = []
+        async for entity in get_gmgn_24h_ranked_groups():
+            entities.append(entity)
+
         entities_data = [
             (
                 EntityType.MEME_COIN.value,
@@ -109,8 +114,9 @@ class EntityImporter:
                 entity.telegram,
                 entity.source_link,
             )
-            for entity in get_gmgn_24h_ranked_groups()
+            for entity in entities
         ]
+
         logger.info(f"Importing {len(entities_data)} entities")
         entity_ids = await self.pg_conn.fetch(
             """
