@@ -11,7 +11,7 @@ class EntityType(Enum):
 
 class MemeCoinEntityMetadata(BaseModel):
     symbol: str
-    launchpad: Optional[str]
+    launchpad: Optional[str | dict]
 
 
 class MemeCoinEntity(BaseModel):

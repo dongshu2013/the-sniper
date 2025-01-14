@@ -50,17 +50,17 @@ async def get_gmgn_24h_ranked_groups():
                         logger.info(f"Found {len(items)} items")
                         for item in items:
                             metadata = MemeCoinEntityMetadata(
-                                launchpad=item["launchpad"],
+                                launchpad=item.get("launchpad", None),
                                 symbol=item["symbol"],
                             )
                             reference = item["chain"] + ":" + item["address"]
                             yield MemeCoinEntity(
                                 reference=reference,
                                 metadata=metadata,
-                                logo=item["logo"],
-                                twitter_username=item["twitter_username"],
-                                website=item["website"],
-                                telegram=item["telegram"],
+                                logo=item.get("logo", None),
+                                twitter_username=item.get("twitter_username", None),
+                                website=item.get("website", None),
+                                telegram=item.get("telegram", None),
                                 source_link=GMGN_24H_VOL_RANKED_URL,
                             )
                     elif response.status == 429:
@@ -89,17 +89,17 @@ async def import_gmgn_24h_ranked_groups():
             logger.info(f"Found {len(items)} items in local file")
             for item in items:
                 metadata = MemeCoinEntityMetadata(
-                    launchpad=item["launchpad"],
+                    launchpad=item.get("launchpad", None),
                     symbol=item["symbol"],
                 )
                 reference = item["chain"] + ":" + item["address"]
                 yield MemeCoinEntity(
                     reference=reference,
                     metadata=metadata,
-                    logo=item["logo"],
-                    twitter_username=item["twitter_username"],
-                    website=item["website"],
-                    telegram=item["telegram"],
+                    logo=item.get("logo", None),
+                    twitter_username=item.get("twitter_username", None),
+                    website=item.get("website", None),
+                    telegram=item.get("telegram", None),
                     source_link=f.name,
                 )
     except FileNotFoundError:
@@ -136,7 +136,7 @@ class EntityImporter:
             (
                 EntityType.MEME_COIN.value,
                 entity.reference,
-                entity.metadata.model_dump(),
+                json.dumps(entity.metadata.model_dump()),
                 entity.website,
                 entity.twitter_username,
                 entity.logo,
