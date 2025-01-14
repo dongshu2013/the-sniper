@@ -214,7 +214,7 @@ async def run(dry_run: bool = False, target_hour: int = None):
                         return
 
                     if dry_run:
-                        print(f"[DRY RUN] Would tweet: {threads}")
+                        print("[DRY RUN] Would tweet: \n" + "\n".join(threads))
                     else:
                         tweet(threads)
                         # Store tweet in database
