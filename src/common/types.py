@@ -36,3 +36,11 @@ class ChatMetadata(BaseModel):
 class EntityGroupItem(BaseModel):
     entity_id: int
     telegram_link: str
+
+
+class ChatMessage(BaseModel):
+    message_id: str
+    chat_id: str
+    message_text: str
+    sender_id: str
+    message_timestamp: int

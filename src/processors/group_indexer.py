@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-class GroupImporter:
+class GroupIndexer:
     def __init__(
         self, client: TelegramClient, redis_client: Redis, pg_conn: asyncpg.Connection
     ):

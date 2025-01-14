@@ -21,6 +21,7 @@ MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
 
 SERVICE_PREFIX = "the_sinper_bot"
 PENDING_TG_GROUPS_KEY = f"{SERVICE_PREFIX}:pending_tg_groups"
+MESSAGE_QUEUE_KEY = f"{SERVICE_PREFIX}:message_queue"
 
 
 def chat_per_hour_stats_key(chat_id: str, metric: str):
