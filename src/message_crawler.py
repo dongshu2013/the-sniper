@@ -32,7 +32,7 @@ async def run():
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
     await register_handlers(listner.client, pg_conn)
-    grp_importer = GroupImporter(listner.client, pg_conn)
+    grp_importer = GroupImporter(listner.client, redis_client, pg_conn)
 
     try:
         await asyncio.gather(

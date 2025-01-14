@@ -60,24 +60,22 @@ class EntityImporter:
         self.running = False
 
     async def process(self):
-        async with self.pg_conn.connection() as conn:
-            # Prepare all entities data as a list of tuples
-            entities_data = [
-                (
-                    EntityType.MEME_COIN.value,
-                    entity.reference,
-                    entity.metadata.model_dump(),
-                    entity.website,
-                    entity.twitter_username,
-                    entity.logo,
-                    entity.telegram,
-                    entity.source_link,
-                )
-                for entity in get_gmgn_24h_ranked_groups()
-            ]
+        entities_data = [
+            (
+                EntityType.MEME_COIN.value,
+                entity.reference,
+                entity.metadata.model_dump(),
+                entity.website,
+                entity.twitter_username,
+                entity.logo,
+                entity.telegram,
+                entity.source_link,
+            )
+            for entity in get_gmgn_24h_ranked_groups()
+        ]
 
-            entity_ids = await conn.executemany(
-                """
+        entity_ids = await self.pg_conn.executemany(
+            """
                 INSERT INTO entities (
                     entity_type, reference, metadata, website,
                     twitter_username, logo, telegram, source_link
@@ -91,17 +89,17 @@ class EntityImporter:
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING id
                 """,
-                entities_data,
-            )
-            group_info = [
-                EntityGroupItem(
-                    entity_id=entity_id,
-                    telegram_link=entity_data[6],
-                ).model_dump_json()
-                for entity_id, entity_data in zip(entity_ids, entities_data)
-                if entity_data[6]
-            ]
-            await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
+            entities_data,
+        )
+        group_info = [
+            EntityGroupItem(
+                entity_id=entity_id,
+                telegram_link=entity_data[6],
+            ).model_dump_json()
+            for entity_id, entity_data in zip(entity_ids, entities_data)
+            if entity_data[6]
+        ]
+        await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
 
 
 async def run():
