@@ -14,8 +14,11 @@ from src.common.config import (
 )
 from src.common.types import ChatMetadata, EntityGroupItem
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class GroupIndexer:
@@ -34,7 +37,9 @@ class GroupIndexer:
         self.running = True
         dialogs = await self.client.get_dialogs(archived=False)
         self.dialogs = {d.id: d for d in dialogs if d.is_group or d.is_channel}
+        logger.info(f"Loaded {len(self.dialogs)} dialogs")
         self.me = await self.client.get_me()
+        logger.info(f"Loaded self account: {self.me.id}")
         while self.running:
             try:
                 await self.process()
@@ -59,6 +64,7 @@ class GroupIndexer:
             logger.info(f"Group {item.telegram_link} already processed")
             return
 
+        logger.info(f"Processing group: {item.telegram_link}")
         result = await self.fetch_and_store_group_info(item)
         await self.redis_client.set(
             link_status_key, "success" if result["success"] else result["error"]
@@ -70,9 +76,10 @@ class GroupIndexer:
         self, item: EntityGroupItem
     ) -> ChatMetadata | str:
         try:
-            logger.info(f"Fetching group info for {item.telegram_link}")
             metadata = await self.get_info_from_link(item.telegram_link)
+            logger.info(f"Fetched group info: {metadata}")
             if not metadata:
+                logger.info(f"Group {item.telegram_link} is not a group")
                 return {"success": False, "error": "not_a_group"}
             await self.pg_conn.execute(
                 """
