@@ -28,7 +28,7 @@ class GroupInfoUpdater(ProcessorBase):
             if dialog.is_group or dialog.is_channel:
                 updates.append(
                     (
-                        dialog.id,  # chat_id
+                        str(dialog.id),  # chat_id
                         dialog.name or None,  # name
                         getattr(dialog.entity, "about", None),  # about
                         getattr(dialog.entity, "username", None),  # username
