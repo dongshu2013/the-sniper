@@ -65,12 +65,12 @@ async def get_gmgn_24h_ranked_groups():
                             )
                     elif response.status == 429:
                         logger.error(
-                            f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
+                            f"Failed to fetch GMGN 24h ranked groups: {response.status}"
                         )
                         await asyncio.sleep(60)
                     else:
                         logger.error(
-                            f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
+                            f"Failed to fetch GMGN 24h ranked groups: {response.status}"
                         )
             except json.JSONDecodeError as e:
                 logger.error(f"JSON decode error for chain {chain}: {e}")
@@ -129,7 +129,7 @@ class EntityImporter:
     async def process(self):
         # Collect entities from the async generator
         entities = []
-        async for entity in get_gmgn_24h_ranked_groups():
+        async for entity in import_gmgn_24h_ranked_groups():
             entities.append(entity)
 
         entities_data = [
