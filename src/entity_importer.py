@@ -81,6 +81,35 @@ async def get_gmgn_24h_ranked_groups():
             await asyncio.sleep(60)
 
 
+async def import_gmgn_24h_ranked_groups():
+    try:
+        with open("data/gmgn_24h_ranked.json", "r") as f:
+            data = json.load(f)
+            items = data.get("data", {}).get("rank", [])
+            logger.info(f"Found {len(items)} items in local file")
+            for item in items:
+                metadata = MemeCoinEntityMetadata(
+                    launchpad=item["launchpad"],
+                    symbol=item["symbol"],
+                )
+                reference = item["chain"] + ":" + item["address"]
+                yield MemeCoinEntity(
+                    reference=reference,
+                    metadata=metadata,
+                    logo=item["logo"],
+                    twitter_username=item["twitter_username"],
+                    website=item["website"],
+                    telegram=item["telegram"],
+                    source_link="local_file",
+                )
+    except FileNotFoundError:
+        logger.error("Local JSON file not found")
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
+    except Exception as e:
+        logger.error(f"Error reading local file: {e}", exc_info=True)
+
+
 class EntityImporter:
     def __init__(self, pg_conn: asyncpg.Connection, redis_client: Redis):
         self.running = False
