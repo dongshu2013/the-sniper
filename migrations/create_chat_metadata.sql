@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     source_link VARCHAR(512),
     twitter VARCHAR(255),
     website VARCHAR(512),
-    metadata JSONB,  -- Stores {chain, address, ticker} as JSON
+    entity JSONB,  -- Stores {chain, address, ticker} as JSON
     about TEXT,
     participants_count INTEGER,
     processed_at BIGINT,
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
 );
 
 -- Create indexes for frequently queried fields
-CREATE INDEX idx_chat_metadata_tg_link ON chat_metadata(tg_link);
+CREATE INDEX idx_chat_metadata_tme_link ON chat_metadata(tme_link);
 CREATE INDEX idx_chat_metadata_chat_id ON chat_metadata(chat_id);
 CREATE INDEX idx_chat_metadata_category ON chat_metadata(category);
 CREATE INDEX idx_chat_metadata_processed_at ON chat_metadata(processed_at);

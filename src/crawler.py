@@ -15,6 +15,7 @@ from src.common.config import (
     chat_messages_key,
     user_chat_key,
 )
+from src.processors.group_importer import GroupImporter
 from src.processors.group_processor import GroupProcessor
 
 # Create logger instance
@@ -33,12 +34,14 @@ async def run():
     logger.info("Telegram bot started successfully")
 
     await register_handlers(listner.client)
+    grp_importer = GroupImporter(listner.client)
     grp_processor = GroupProcessor(listner.client, PROCESSING_INTERVAL)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
             grp_processor.start_processing(),
+            grp_importer.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
