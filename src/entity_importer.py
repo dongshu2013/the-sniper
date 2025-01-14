@@ -74,23 +74,35 @@ class EntityImporter:
             for entity in get_gmgn_24h_ranked_groups()
         ]
 
-        entity_ids = await self.pg_conn.executemany(
+        logger.info(f"Importing {len(entities_data)} entities")
+        entity_ids = await self.pg_conn.fetch(
             """
-                INSERT INTO entities (
-                    entity_type, reference, metadata, website,
-                    twitter_username, logo, telegram, source_link
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                ON CONFLICT (entity_type, reference) DO UPDATE
-                SET
-                    logo = EXCLUDED.logo,
-                    website = EXCLUDED.website,
-                    telegram = EXCLUDED.telegram,
-                    twitter_username = EXCLUDED.twitter_username,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING id
-                """,
-            entities_data,
+            INSERT INTO entities (
+                entity_type, reference, metadata, website,
+                twitter_username, logo, telegram, source_link
+            )
+            SELECT * FROM unnest($1::text[], $2::text[], $3::jsonb[], $4::text[],
+                               $5::text[], $6::text[], $7::text[], $8::text[])
+            ON CONFLICT (entity_type, reference) DO UPDATE
+            SET
+                logo = EXCLUDED.logo,
+                website = EXCLUDED.website,
+                telegram = EXCLUDED.telegram,
+                twitter_username = EXCLUDED.twitter_username,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING id
+            """,
+            [x[0] for x in entities_data],  # entity_type
+            [x[1] for x in entities_data],  # reference
+            [x[2] for x in entities_data],  # metadata
+            [x[3] for x in entities_data],  # website
+            [x[4] for x in entities_data],  # twitter_username
+            [x[5] for x in entities_data],  # logo
+            [x[6] for x in entities_data],  # telegram
+            [x[7] for x in entities_data],  # source_link
         )
+        entity_ids = [record["id"] for record in entity_ids]
+        logger.info(f"Imported {len(entity_ids)} entities")
         group_info = [
             EntityGroupItem(
                 entity_id=entity_id,

@@ -7,10 +7,9 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     participants_count INTEGER,
     processed_at BIGINT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for frequently queried fields
-CREATE INDEX idx_chat_metadata_tme_link ON chat_metadata(tme_link);
 CREATE INDEX idx_chat_metadata_chat_id ON chat_metadata(chat_id);
-CREATE INDEX idx_chat_metadata_processed_at ON chat_metadata(processed_at);
+CREATE INDEX idx_chat_metadata_entity_id ON chat_metadata(entity_id);
