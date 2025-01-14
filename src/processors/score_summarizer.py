@@ -9,7 +9,7 @@ import asyncpg
 from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
-from src.common.config import DATABASE_URL, REDIS_URL, chat_info_key
+from src.common.config import DATABASE_URL, REDIS_URL
 
 # flake8: noqa
 # format off
@@ -121,16 +121,13 @@ class ChatScoreSummarizer:
         """Build activity report for a chat group."""
         logger.info(f"Evaluating chat {chat_id} at {current_time}")
         messages = await self.get_unprocessed_messages(chat_id, current_time)
-        chat_info = json.loads(await self.redis_client.get(chat_info_key(chat_id)))
         if not messages or len(messages) < MIN_MESSAGES_TO_PROCESS:
             logger.info(
-                f"Not enough messages to process for chat {chat_info['name']} to summarize, skipping..."
+                f"Not enough messages to process for chat {chat_id} to summarize, skipping..."
             )
             return
 
-        logger.info(
-            f"Found {len(messages)} messages to process for chat {chat_info['name']}"
-        )
+        logger.info(f"Found {len(messages)} messages to process for chat {chat_id}")
         # Prepare conversation history for AI
         conversation_text = self._prepare_conversations(messages)
         response = await self.client.chat_completion(
