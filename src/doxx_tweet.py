@@ -74,9 +74,14 @@ def calculate_score(scores):
 
 async def tweet_9am(pg_conn: asyncpg.Connection):
     query = """
-SELECT chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
-FROM chat_score_summaries
-WHERE last_message_timestamp > $1
+WITH latest_summaries AS (
+    SELECT DISTINCT ON (chat_id)
+        chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
+    FROM chat_score_summaries
+    WHERE last_message_timestamp > $1
+    ORDER BY chat_id, last_message_timestamp DESC
+)
+SELECT * FROM latest_summaries
 ORDER BY score DESC
 LIMIT 10
 """
