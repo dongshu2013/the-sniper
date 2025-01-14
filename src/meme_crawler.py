@@ -4,7 +4,7 @@ import logging
 import asyncpg
 
 from src.common.config import DATABASE_URL
-from src.processors.meme_crawler import MemeCrawler
+from src.processors.gmgn_crawler import MemeCrawler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

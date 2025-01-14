@@ -1,13 +1,13 @@
 CREATE TABLE IF NOT EXISTS chat_metadata (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) UNIQUE,
-    tme_link VARCHAR(255) UNIQUE, -- t.me link
+    tme_link VARCHAR(255), -- t.me link
     name VARCHAR(255),
     category VARCHAR(50),
     source_link VARCHAR(512),
     twitter VARCHAR(255),
     website VARCHAR(512),
-    entity JSONB,  -- Stores {chain, address, ticker} as JSON
+    entity JSONB UNIQUE,  -- Stores {chain, address, ticker} as JSON
     about TEXT,
     participants_count INTEGER,
     processed_at BIGINT,

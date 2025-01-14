@@ -44,8 +44,14 @@ class MemeCrawler:
         self.running = False
 
     async def fetch_gmgn_data(self) -> List[MemeData]:
-        chains = ["sol", "eth", "bsc", "arb", "base"]  # Add more chains as needed
+        chains = ["sol", "base"]
         all_data = []
+        
+        # Configure different filters for different chains
+        chain_filters = {
+            "sol": ["renounced", "frozen"],
+            "base": ["not_honeypot", "verified", "renounced"]
+        }
         
         async with aiohttp.ClientSession(headers=self.headers) as session:
             for chain in chains:
@@ -53,14 +59,22 @@ class MemeCrawler:
                 params = {
                     "orderby": "volume",
                     "direction": "desc",
-                    "filters[]": ["renounced", "frozen"]
+                    "filters[]": chain_filters[chain]
                 }
                 
                 try:
+                    logger.info(f"Fetching data for chain {chain} with params: {params}")
                     async with session.get(url, params=params) as response:
+                        response_text = await response.text()
+                        logger.info(f"Response status for {chain}: {response.status}")
+                        logger.debug(f"Response content for {chain}: {response_text[:200]}...")  # 记录前200个字符
+                        
                         if response.status == 200:
-                            data = await response.json()
-                            for item in data.get("data", {}).get("rank", []):
+                            data = json.loads(response_text)
+                            items = data.get("data", {}).get("rank", [])
+                            logger.info(f"Retrieved {len(items)} items for chain {chain}")
+                            
+                            for item in items:
                                 meme_data = MemeData(
                                     chain=item["chain"],
                                     address=item["address"],
@@ -70,50 +84,54 @@ class MemeCrawler:
                                     website=item.get("website")
                                 )
                                 all_data.append(meme_data)
-                        elif response.status == 429:  # Rate limited
+                        elif response.status == 429:
                             logger.warning(f"Rate limited for chain {chain}")
-                            await asyncio.sleep(60)  # Wait before next request
+                            await asyncio.sleep(60)
+                        else:
+                            logger.error(f"Unexpected status code {response.status} for chain {chain}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON decode error for chain {chain}: {e}")
                 except Exception as e:
-                    logger.error(f"Error fetching data for chain {chain}: {e}")
+                    logger.error(f"Error fetching data for chain {chain}: {e}", exc_info=True)
                 
-                await asyncio.sleep(1)  # Rate limiting between requests
+                await asyncio.sleep(2)
                 
+        logger.info(f"Total data collected: {len(all_data)} items")
         return all_data
 
     async def process_meme_data(self):
         try:
             meme_data = await self.fetch_gmgn_data()
-            current_time = int(time.time())
             
-            for data in meme_data:
-                entity = {
+            values = [(
+                data.tme_link,
+                'meme_project',
+                'https://gmgn.ai/',
+                data.twitter,
+                data.website,
+                json.dumps({
                     "chain": data.chain,
                     "address": data.address,
                     "ticker": data.ticker
-                }
-                
-                await self.pg_conn.execute("""
-                    INSERT INTO chat_metadata (
-                        tme_link, category, source_link, twitter, 
-                        website, entity, processed_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (tme_link) 
-                    DO UPDATE SET
-                        twitter = EXCLUDED.twitter,
-                        website = EXCLUDED.website,
-                        entity = EXCLUDED.entity,
-                        processed_at = EXCLUDED.processed_at,
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    data.tme_link,
-                    'meme_project',
-                    'https://gmgn.ai/',
-                    data.twitter,
-                    data.website,
-                    json.dumps(entity),
-                    current_time
+                }),
+                int(time.time())
+            ) for data in meme_data]
+            
+            await self.pg_conn.executemany("""
+                INSERT INTO chat_metadata (
+                    tme_link, category, source_link, twitter, 
+                    website, entity, processed_at
                 )
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (entity)
+                DO UPDATE SET
+                    tme_link = EXCLUDED.tme_link,
+                    twitter = EXCLUDED.twitter,
+                    website = EXCLUDED.website,
+                    entity = EXCLUDED.entity,
+                    processed_at = EXCLUDED.processed_at,
+                    updated_at = CURRENT_TIMESTAMP
+                """, values)
                 
             logger.info(f"Successfully processed {len(meme_data)} meme tokens")
             
