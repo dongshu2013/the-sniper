@@ -12,7 +12,7 @@ import asyncio
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import asyncpg
 import tweepy
@@ -72,7 +72,7 @@ def calculate_score(scores):
     return final_scores
 
 
-async def read_chat_score_summary(pg_conn: asyncpg.Connection) -> dict:
+async def tweet_9am(pg_conn: asyncpg.Connection):
     query = """
 SELECT chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
 FROM chat_score_summaries
@@ -117,39 +117,31 @@ LIMIT 10
     return response["choices"][0]["message"]["content"]
 
 
-def read_highlights() -> str:
+async def tweet_12pm(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_9am():
+async def tweet_3pm(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_12pm():
+async def tweet_6pm(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_3pm():
+async def tweet_9pm(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_6pm():
+async def tweet_12am(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_9pm():
+async def tweet_3am(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet_12am():
-    pass
-
-
-def tweet_3am():
-    pass
-
-
-def tweet_6am():
+async def tweet_6am(pg_conn: asyncpg.Connection):
     pass
 
 
@@ -157,12 +149,15 @@ def tweet(text: str):
     client.create_tweet(text=text)
 
 
-async def run(dry_run: bool = False):
+async def run(dry_run: bool = False, target_hour: int = None):
     # Get current time in UTC
-    utc_now = datetime.now(datetime.timezone.utc)
+    utc_now = datetime.now(timezone.utc)
     current_hour = utc_now.hour
     current_date = utc_now.date().isoformat()
     pg_conn = await asyncpg.connect(DATABASE_URL)
+
+    if target_hour is not None:
+        current_hour = target_hour
 
     # Create a Redis key for the current hour and date
     redis_key = f"doxx_tweet:{current_date}:{current_hour}"
@@ -182,9 +177,13 @@ async def run(dry_run: bool = False):
     # Check if we should tweet
     if current_hour in tweet_schedule:
         # Check if we already tweeted this hour
-        if not await redis.exists(redis_key):
+        if dry_run or not await redis.exists(redis_key):
             try:
-                tweet_text = tweet_schedule[current_hour]()
+                tweet_text = await tweet_schedule[current_hour](pg_conn)
+                if not tweet_text:
+                    logger.info("No tweet text to post")
+                    return
+
                 if dry_run:
                     print(f"[DRY RUN] Would tweet: {tweet_text}")
                 else:
@@ -254,9 +253,15 @@ def main():
     parser.add_argument(
         "--dry-run", action="store_true", help="Print tweets instead of posting them"
     )
+    parser.add_argument(
+        "--hour",
+        type=int,
+        choices=[0, 3, 6, 9, 12, 15, 18, 21],
+        help="Specify hour in 24-hour format (0, 3, 6, 9, 12, 15, 18, 21)",
+    )
     args = parser.parse_args()
 
-    asyncio.run(run(dry_run=args.dry_run))
+    asyncio.run(run(dry_run=args.dry_run, target_hour=args.hour))
 
 
 if __name__ == "__main__":
