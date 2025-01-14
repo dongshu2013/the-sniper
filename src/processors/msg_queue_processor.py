@@ -49,7 +49,6 @@ class MessageQueueProcessor:
     async def process_batch(self) -> int:
         messages: List[Dict] = []
 
-        logger.info("loading messages from redis")
         # Get batch of messages from Redis in a single operation
         raw_messages = await self.redis_client.rpop(MESSAGE_QUEUE_KEY, self.batch_size)
         if not raw_messages:
