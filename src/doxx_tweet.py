@@ -151,51 +151,6 @@ async def tweet_6am(pg_conn: asyncpg.Connection):
     pass
 
 
-def split_into_threads(text: str, max_length: int = 280) -> list[str]:
-    """Split long text into multiple tweets that fit within character limit.
-    First splits by lines, then by words if a line exceeds the limit."""
-    tweets = []
-    lines = text.split("\n")
-    current_tweet = ""
-
-    for line in lines:
-        # Check if adding the next line exceeds limit (including thread marker)
-        test_tweet = current_tweet + ("\n" if current_tweet else "") + line
-        if len(test_tweet.strip()) + 6 <= max_length:  # 6 chars for " (1/n)"
-            current_tweet = test_tweet
-        else:
-            # If the current line itself exceeds max_length, split it into words
-            if len(line) + 6 > max_length:
-                # First, add any accumulated tweet
-                if current_tweet:
-                    tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
-                    current_tweet = ""
-
-                # Split long line into words
-                words = line.split()
-                for word in words:
-                    test_tweet = current_tweet + (" " if current_tweet else "") + word
-                    if len(test_tweet.strip()) + 6 <= max_length:
-                        current_tweet = test_tweet
-                    else:
-                        tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
-                        current_tweet = word
-            else:
-                # Add accumulated tweet and start new one with current line
-                tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
-                current_tweet = line
-
-    # Add the last tweet
-    if current_tweet:
-        tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/{len(tweets)+1})")
-
-    # Update all thread markers with final count
-    total = len(tweets)
-    tweets = [tweet.replace("/n)", f"/{total})") for tweet in tweets]
-
-    return tweets
-
-
 def tweet(tweets: list[str]):
     """Post tweet or thread of tweets if text exceeds character limit."""
     # Post as single tweet if no splitting needed
@@ -253,15 +208,15 @@ async def run(dry_run: bool = False, target_hour: int = None):
             if dry_run or not already_tweeted:
                 try:
                     tweet_text = await tweet_schedule[current_hour](pg_conn)
-                    if not tweet_text:
+                    threads = tweet_text.split("\n")
+                    if not threads:
                         logger.info("No tweet text to post")
                         return
 
-                    tweets = split_into_threads(tweet_text)
                     if dry_run:
-                        print(f"[DRY RUN] Would tweet: {tweets}")
+                        print(f"[DRY RUN] Would tweet: {threads}")
                     else:
-                        tweet(tweets)
+                        tweet(threads)
                         # Store tweet in database
                         await pg_conn.execute(
                             """
@@ -299,6 +254,17 @@ Remember:
 2. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
 3. Use your humor and personality to make it more engaging and interesting
 4. Share your opinions, do not be afraid of being aggressive and bold
+
+Output:
+Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
+new lines. Add a thread marker to the end of each tweet if there are more than one tweet.
+For example, if there are 3 tweets, the output should be:
+```
+tweet_1 (1/3)
+tweet_2 (2/3)
+tweet_3 (3/3)
+```
+You don't need to add the thread marker if there is only one tweet.
 """
 
 
