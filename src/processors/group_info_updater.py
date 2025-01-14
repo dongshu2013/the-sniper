@@ -29,9 +29,9 @@ class GroupInfoUpdater(ProcessorBase):
                 updates.append(
                     (
                         dialog.id,  # chat_id
-                        dialog.dialog.name or None,  # name
-                        dialog.dialog.about or None,  # about
-                        dialog.dialog.participants_count or 0,  # participants_count
+                        dialog.entity.name or None,  # name
+                        dialog.entity.about or None,  # about
+                        dialog.entity.participants_count or 0,  # participants_count
                     )
                 )
         if updates:

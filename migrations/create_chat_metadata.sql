@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS chat_metadata (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(255) DEFAULT '',
     entity_id INTEGER DEFAULT NULL,
     about TEXT DEFAULT '',
     participants_count INTEGER DEFAULT 0,

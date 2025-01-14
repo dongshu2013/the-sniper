@@ -9,7 +9,7 @@ class ProcessorBase:
     async def start_processing(self):
         self.running = True
         while self.running:
-            self.process()
+            await self.process()
             await asyncio.sleep(self.interval)
 
     def stop_processing(self):

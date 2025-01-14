@@ -35,7 +35,7 @@ async def run():
 
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
-    await register_handlers(listner.client, pg_conn)
+    await register_handlers(listner.client)
     grp_queue_processor = GroupQueueProcessor(listner.client, redis_client, pg_conn)
     grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
