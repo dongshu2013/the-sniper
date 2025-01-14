@@ -1,4 +1,4 @@
-#     ### Full-Day Posting Schedule:
+# Full-Day Posting Schedule:
 # - 9:00 AM: Leaderboard update + mood share.
 # - 12:00 PM: Selfie post + community comment highlights.
 # - 3:00 PM: Sentiment summary + Doxx’s commentary.
@@ -151,8 +151,63 @@ async def tweet_6am(pg_conn: asyncpg.Connection):
     pass
 
 
-def tweet(text: str):
-    client.create_tweet(text=text)
+def split_into_threads(text: str, max_length: int = 280) -> list[str]:
+    """Split long text into multiple tweets that fit within character limit.
+    First splits by lines, then by words if a line exceeds the limit."""
+    tweets = []
+    lines = text.split("\n")
+    current_tweet = ""
+
+    for line in lines:
+        # Check if adding the next line exceeds limit (including thread marker)
+        test_tweet = current_tweet + ("\n" if current_tweet else "") + line
+        if len(test_tweet.strip()) + 6 <= max_length:  # 6 chars for " (1/n)"
+            current_tweet = test_tweet
+        else:
+            # If the current line itself exceeds max_length, split it into words
+            if len(line) + 6 > max_length:
+                # First, add any accumulated tweet
+                if current_tweet:
+                    tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
+                    current_tweet = ""
+
+                # Split long line into words
+                words = line.split()
+                for word in words:
+                    test_tweet = current_tweet + (" " if current_tweet else "") + word
+                    if len(test_tweet.strip()) + 6 <= max_length:
+                        current_tweet = test_tweet
+                    else:
+                        tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
+                        current_tweet = word
+            else:
+                # Add accumulated tweet and start new one with current line
+                tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/n)")
+                current_tweet = line
+
+    # Add the last tweet
+    if current_tweet:
+        tweets.append(f"{current_tweet.strip()} ({len(tweets)+1}/{len(tweets)+1})")
+
+    # Update all thread markers with final count
+    total = len(tweets)
+    tweets = [tweet.replace("/n)", f"/{total})") for tweet in tweets]
+
+    return tweets
+
+
+def tweet(tweets: list[str]):
+    """Post tweet or thread of tweets if text exceeds character limit."""
+    # Post as single tweet if no splitting needed
+    if len(tweets) == 1:
+        return client.create_tweet(text=tweets[0])
+
+    # First tweet becomes the parent
+    response = client.create_tweet(text=tweets[0])
+    parent_tweet_id = response.data["id"]
+    # All subsequent tweets reply to the parent
+    for tweet_text in tweets[1:]:
+        client.create_tweet(text=tweet_text, in_reply_to_tweet_id=parent_tweet_id)
 
 
 tweet_schedule = {
@@ -168,35 +223,59 @@ tweet_schedule = {
 
 
 async def run(dry_run: bool = False, target_hour: int = None):
-    # Get current time in UTC
     utc_now = datetime.now(timezone.utc)
     current_hour = utc_now.hour
-    current_date = utc_now.date().isoformat()
+    current_timestamp = int(time.time())
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
     if target_hour is not None:
         current_hour = target_hour
 
-    redis_key = f"doxx_tweet:{current_date}:{current_hour}"
+    try:
+        # Check if we should tweet
+        if current_hour in tweet_schedule:
+            # Check if we already tweeted this hour (within last 2 hours)
+            two_hours_ago = current_timestamp - 7200
+            already_tweeted = await pg_conn.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM character_tweets
+                    WHERE character = 'doxx'
+                    AND posted_at > $1
+                    AND posted_at <= $2
+                )
+            """,
+                two_hours_ago,
+                current_timestamp,
+            )
 
-    # Check if we should tweet
-    if current_hour in tweet_schedule:
-        # Check if we already tweeted this hour
-        if dry_run or not await redis.exists(redis_key):
-            try:
-                tweet_text = await tweet_schedule[current_hour](pg_conn)
-                if not tweet_text:
-                    logger.info("No tweet text to post")
-                    return
+            if dry_run or not already_tweeted:
+                try:
+                    tweet_text = await tweet_schedule[current_hour](pg_conn)
+                    if not tweet_text:
+                        logger.info("No tweet text to post")
+                        return
 
-                if dry_run:
-                    print(f"[DRY RUN] Would tweet: {tweet_text}")
-                else:
-                    tweet(tweet_text)
-                    # Set key with 2 hour expiration (safe cleanup)
-                    await redis.setex(redis_key, 7200, "tweeted")
-            except Exception as e:
-                print(f"Error posting tweet: {e}")
+                    tweets = split_into_threads(tweet_text)
+                    if dry_run:
+                        print(f"[DRY RUN] Would tweet: {tweets}")
+                    else:
+                        tweet(tweets)
+                        # Store tweet in database
+                        await pg_conn.execute(
+                            """
+                            INSERT INTO character_tweets (character, posted_at, tweet_text)
+                            VALUES ($1, $2, $3)
+                        """,
+                            "doxx",
+                            current_timestamp,
+                            tweet_text,
+                        )
+                except Exception as e:
+                    logger.error(f"Error posting tweet: {e}")
+    finally:
+        await pg_conn.close()
 
 
 # flake8: noqa
