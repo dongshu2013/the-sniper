@@ -73,7 +73,6 @@ class EntityImporter:
             )
             for entity in get_gmgn_24h_ranked_groups()
         ]
-
         logger.info(f"Importing {len(entities_data)} entities")
         entity_ids = await self.pg_conn.fetch(
             """
@@ -117,7 +116,13 @@ class EntityImporter:
 
 
 async def run():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     logger.setLevel(logging.INFO)
+    logger.info("Starting entity importer...")
+
     pg_conn = await asyncpg.connect(DATABASE_URL)
     redis_client = Redis.from_url(REDIS_URL)
     entity_importer = EntityImporter(pg_conn, redis_client)
