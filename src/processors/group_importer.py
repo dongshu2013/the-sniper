@@ -4,21 +4,18 @@ import time
 from urllib.parse import urlparse
 
 import asyncpg
-from pydantic import BaseModel
 from redis.asyncio import Redis
 from telethon import TelegramClient
 
-from src.common.config import chat_indexed_key
+from src.common.config import (
+    PENDING_TG_GROUPS_KEY,
+    chat_indexed_key,
+    chat_watched_by_key,
+    tg_link_status_key,
+)
+from src.common.types import ChatMetadata, EntityGroupItem
 
 logger = logging.getLogger(__name__)
-
-
-class ChatMetadata(BaseModel):
-    chat_id: str
-    name: str
-    about: str
-    participants_count: int
-    processed_at: int
 
 
 class GroupImporter:
@@ -29,13 +26,18 @@ class GroupImporter:
         self.redis_client = redis_client
         self.pg_conn = pg_conn
         self.running = False
-        self.interval = 300
+        self.interval = 5
+        self.dialogs = {}
+        self.me = None
 
     async def start_processing(self):
         self.running = True
+        dialogs = await self.client.get_dialogs(archived=False)
+        self.dialogs = {d.id: d for d in dialogs if d.is_group or d.is_channel}
+        self.me = await self.client.get_me()
         while self.running:
             try:
-                await self.process_groups()
+                await self.process()
                 await asyncio.sleep(self.interval)
             except Exception as e:
                 logger.error(f"Error in group processing: {e}")
@@ -43,59 +45,61 @@ class GroupImporter:
     async def stop_processing(self):
         self.running = False
 
-    async def process_groups(self):
+    async def process(self):
         """Process unprocessed groups from chat metadata table"""
+        item = await self.redis_client.rpop(PENDING_TG_GROUPS_KEY)
+        if not item:
+            return
+        item = EntityGroupItem.model_validate_json(item)
+        item.telegram_link = item.telegram_link.strip()
+
+        link_status_key = tg_link_status_key(item.telegram_link)
+        status = await self.redis_client.get(link_status_key)
+        if status is not None:
+            logger.info(f"Group {item.telegram_link} already processed")
+            return
+
+        logger.info(f"Processing group {item.telegram_link}")
+        result = await self.fetch_and_store_group_info(item)
+        await self.redis_client.set(
+            link_status_key, "success" if result["success"] else result["error"]
+        )
+        if result["success"]:
+            await self.try_to_join_channel(result["metadata"])
+
+    async def fetch_and_store_group_info(
+        self, item: EntityGroupItem
+    ) -> ChatMetadata | str:
         try:
-            # Get unprocessed groups from database
-            async with self.pg_conn.acquire() as conn:
-                unprocessed = await conn.fetch(
-                    """
-                    SELECT id, tme_link
-                    FROM chat_metadata
-                    WHERE processed_at IS NULL
-                    LIMIT 50
-                    """
+            metadata = await self.get_info_from_link(item.telegram_link)
+            if not metadata:
+                return {"success": False, "error": "not_a_group"}
+            await self.pg_conn.execute(
+                """
+                INSERT INTO chat_metadata (
+                    chat_id, name, about, participants_count,
+                    processed_at, entity_id
                 )
-
-                for record in unprocessed:
-                    try:
-                        # Get group info from Telegram
-                        group_info = await self.get_info_from_link(record["tme_link"])
-
-                        if group_info:
-                            # Update database with processed info
-                            await conn.execute(
-                                """
-                                UPDATE chat_metadata
-                                SET chat_id = $1,
-                                    name = $2,
-                                    about = $3,
-                                    participants_count = $4,
-                                    processed_at = $5
-                                WHERE id = $6
-                                """,
-                                group_info.chat_id,
-                                group_info.name,
-                                group_info.about,
-                                group_info.participants_count,
-                                int(time.time()),
-                                record["id"],
-                            )
-                            await self.redis_client.set(
-                                chat_indexed_key(group_info.chat_id), int(time.time())
-                            )
-                            logger.info(f"Processed group {group_info.name}")
-                    except Exception as e:
-                        logger.error(
-                            f"Error processing group {record['tme_link']}: {e}"
-                        )
-                        await conn.execute(
-                            "UPDATE chat_metadata SET processed_at = $1 WHERE id = $2",
-                            -1,
-                            record["id"],
-                        )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (chat_id) DO UPDATE
+                SET name = EXCLUDED.name,
+                    about = EXCLUDED.about,
+                    participants_count = EXCLUDED.participants_count,
+                    processed_at = EXCLUDED.processed_at
+                """,
+                metadata.chat_id,
+                metadata.name,
+                metadata.about,
+                metadata.participants_count,
+                int(time.time()),
+                item.entity_id,
+            )
+            self.redis_client.set(chat_indexed_key(metadata.chat_id), "true")
+            logger.info(f"Group {metadata.chat_id} processed successfully")
+            return {"success": True, "metadata": metadata}
         except Exception as e:
-            logger.error(f"Database error in process_groups: {e}")
+            logger.error(f"Database error in fetch_and_store_group_info: {e}")
+            return {"success": False, "error": "unknown_error"}
 
     async def get_info_from_link(self, tme_link: str) -> ChatMetadata | None:
         parsed = urlparse(tme_link)
@@ -104,6 +108,8 @@ class GroupImporter:
             entity = await self.client.get_entity(tme_link)  # invite
         else:
             entity = await self.client.get_entity(f"t.me/{path}")
+        if not entity.is_channel and not entity.is_group:
+            return None
         return ChatMetadata(
             chat_id=entity.id,
             name=entity.title,
@@ -111,3 +117,20 @@ class GroupImporter:
             participants_count=entity.participants_count,
             processed_at=int(time.time()),
         )
+
+    async def try_to_join_channel(self, metadata: ChatMetadata):
+        if metadata.chat_id in self.dialogs:
+            return  # already joined
+
+        watchers = await self.redis_client.llen(chat_watched_by_key(metadata.chat_id))
+        if watchers > 0:
+            return  # already watched by other bots
+
+        try:
+            logger.info(f"Joining group {metadata.chat_id}")
+            await self.client.join_chat(metadata.chat_id)
+            await self.redis_client.lpush(
+                chat_watched_by_key(metadata.chat_id), self.me.id
+            )
+        except Exception as e:
+            logger.error(f"Failed to join channel {metadata.chat_id}: {e}")

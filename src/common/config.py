@@ -9,7 +9,6 @@ API_ID = os.getenv("TG_API_ID")
 API_HASH = os.getenv("TG_API_HASH")
 PHONE = os.getenv("TG_PHONE")
 PROCESSING_INTERVAL = int(os.getenv("PROCESSING_INTERVAL", 300))
-SERVICE_PREFIX = "the_sinper_bot"
 SESSION_NAME = os.getenv("SESSION_NAME")
 
 ENV = os.getenv("ENV", "development")
@@ -19,6 +18,9 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 OPENROUTER_API_URL: str = "https://openrouter.ai/api/v1/"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
+
+SERVICE_PREFIX = "the_sinper_bot"
+PENDING_TG_GROUPS_KEY = f"{SERVICE_PREFIX}:pending_tg_groups"
 
 
 def chat_per_hour_stats_key(chat_id: str, metric: str):
@@ -32,3 +34,11 @@ def message_seen_key(chat_id: str, message_id: str):
 
 def chat_indexed_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:indexed"
+
+
+def tg_link_status_key(tg_link: str):
+    return f"{SERVICE_PREFIX}:tg_link:{tg_link}:status"
+
+
+def chat_watched_by_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:watched_by"
