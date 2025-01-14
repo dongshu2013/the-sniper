@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright
 from scrapy.selector import Selector
 
 from ..base import BaseSpider
-from .items import GmgnItem
+from .items import MemeItem
 from .pipeline import PostgresPipeline
 from ..config import PLAYWRIGHT_CONFIG, DOWNLOAD_DELAY
 
@@ -40,36 +40,59 @@ class GmgnSpider(BaseSpider):
             await browser.close()
             
     async def _scroll_page(self, page):
-        # 移植原有的滚动逻辑
         last_height = await page.evaluate('document.body.scrollHeight')
-        while True:
+        max_attempts = 30  # 设置最大尝试次数
+        attempts = 0
+        
+        while attempts < max_attempts:
             scroll_distance = random.randint(300, 700)
             await page.evaluate(f'window.scrollBy(0, {scroll_distance})')
             await page.wait_for_timeout(random.randint(500, 1500))
+            
             new_height = await page.evaluate('document.body.scrollHeight')
             if new_height == last_height:
-                break
+                # 再尝试一次确保真的到底了
+                await page.wait_for_timeout(2000)
+                final_height = await page.evaluate('document.body.scrollHeight')
+                if final_height == new_height:
+                    break
+                    
             last_height = new_height
+            attempts += 1
             
     async def _parse_content(self, content):
         items = []
         selector = Selector(text=content)
+        
+        # 匹配具有 cursor-pointer 的表格行
         meme_cards = selector.xpath("//div[contains(@class, 'g-table-row') and contains(@class, 'cursor-pointer')]")
         
         self.logger.info(f"Found {len(meme_cards)} meme cards")
         
         for meme in meme_cards:
             try:
+                # Get all social links
                 tg_account = meme.xpath(".//a[@aria-label='telegram']/@href").get()
-                if not tg_account or not tg_account.startswith("https://t.me/"):
+                x_account = meme.xpath(".//a[@aria-label='twitter']/@href").get()
+                website = meme.xpath(".//a[@aria-label='website']/@href").get()
+                
+                # Skip if no anyone social links
+                if not (tg_account or x_account or website):
                     continue
                     
-                item = GmgnItem()
-                item.ticker = meme.xpath(".//div[@title]/@title").get()
-                item.x_account = meme.xpath(".//a[@aria-label='twitter']/@href").get()
-                item.website = meme.xpath(".//a[@aria-label='website']/@href").get()
-                item.tg_account = tg_account
+                item = MemeItem()
                 item.source = "gmgn"
+                item.category = "meme_project"
+                item.tg_account = tg_account
+                item.x_account = x_account
+                item.website = website
+                item.ticker = meme.xpath(".//div[@title]/@title").get()
+                # TODO fix get address from `<a href="/sol/token/Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump">`
+                item.address = meme.xpath(".//p[contains(@class, 'chakra-text')]/text()").get()
+                chain_img = meme.xpath("//div[starts-with(@id, 'menu-button-')]//img[@alt='network']/@src").get()
+                if chain_img:
+                    # get `chain` from "/static/img/chain.webp"
+                    item.chain = chain_img.split('/')[-1].split('.')[0]
                 
                 if not item.ticker:
                     self.logger.warning(f"Skipping item due to missing ticker: {item}")

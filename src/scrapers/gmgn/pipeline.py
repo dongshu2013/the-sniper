@@ -14,18 +14,21 @@ class PostgresPipeline:
         await self.conn.execute("""
             CREATE TABLE IF NOT EXISTS meme_info (
                 id SERIAL PRIMARY KEY,
-                ticker TEXT UNIQUE,
+                tg_account TEXT,
+                source TEXT,
+                chain TEXT,
+                address TEXT,
                 x_account TEXT,
                 website TEXT, 
-                tg_account TEXT,
-                source TEXT
+                ticker TEXT UNIQUE,
+                category TEXT
             )
         """)
         
     async def process_item(self, item):
         await self.connect()
         await self.conn.execute("""
-            INSERT INTO meme_info (ticker, x_account, website, tg_account, source)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO meme_info (ticker, x_account, website, tg_account, source, chain, address, category)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (ticker) DO NOTHING
-        """, item.ticker, item.x_account, item.website, item.tg_account, item.source) 
+        """, item.ticker, item.x_account, item.website, item.tg_account, item.source, item.chain, item.address, item.category) 

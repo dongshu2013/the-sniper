@@ -9,7 +9,7 @@ POSTGRES_CONFIG = {
     'port': int(os.getenv('POSTGRES_PORT', 5432)),
     'user': os.getenv('POSTGRES_USER', 'kevin'),
     'password': os.getenv('POSTGRES_PASSWORD', ''),
-    'database': os.getenv('POSTGRES_DB', 'gmgn_memes')
+    'database': os.getenv('POSTGRES_DB', 'mizu')
 }
 
 # Browser configs
@@ -31,6 +31,4 @@ PLAYWRIGHT_CONFIG = {
 }
 
 # Scraping configs
-DOWNLOAD_DELAY = 15  # seconds
-RETRY_TIMES = 3
-RETRY_HTTP_CODES = [403, 429] 
+DOWNLOAD_DELAY = 5  # seconds
