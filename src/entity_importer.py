@@ -40,37 +40,46 @@ async def get_gmgn_24h_ranked_groups():
                 "direction": "desc",
                 "filters[]": CHAIN_FILTERS[chain],
             }
-            async with session.get(GMGN_24H_VOL_RANKED_URL, params=params) as response:
-                response_text = await response.text()
-                if response.status == 200:
-                    data = json.loads(response_text)
-                    items = data.get("data", {}).get("rank", [])
-                    logger.info(f"Found {len(items)} items")
-                    for item in items:
-                        metadata = MemeCoinEntityMetadata(
-                            launchpad=item["launchpad"],
-                            symbol=item["symbol"],
+            try:
+                async with session.get(
+                    GMGN_24H_VOL_RANKED_URL, params=params
+                ) as response:
+                    response_text = await response.text()
+                    if response.status == 200:
+                        data = json.loads(response_text)
+                        items = data.get("data", {}).get("rank", [])
+                        logger.info(f"Found {len(items)} items")
+                        for item in items:
+                            metadata = MemeCoinEntityMetadata(
+                                launchpad=item["launchpad"],
+                                symbol=item["symbol"],
+                            )
+                            reference = item["chain"] + ":" + item["address"]
+                            yield MemeCoinEntity(
+                                reference=reference,
+                                metadata=metadata,
+                                logo=item["logo"],
+                                twitter_username=item["twitter_username"],
+                                website=item["website"],
+                                telegram=item["telegram"],
+                                source_link=GMGN_24H_VOL_RANKED_URL,
+                            )
+                    elif response.status == 429:
+                        logger.error(
+                            f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
                         )
-                        reference = item["chain"] + ":" + item["address"]
-                        yield MemeCoinEntity(
-                            reference=reference,
-                            metadata=metadata,
-                            logo=item["logo"],
-                            twitter_username=item["twitter_username"],
-                            website=item["website"],
-                            telegram=item["telegram"],
-                            source_link=GMGN_24H_VOL_RANKED_URL,
+                        await asyncio.sleep(60)
+                    else:
+                        logger.error(
+                            f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
                         )
-                elif response.status == 429:
-                    logger.error(
-                        f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
-                    )
-                    await asyncio.sleep(60)
-                else:
-                    logger.error(
-                        f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
-                    )
-                    await asyncio.sleep(60)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error for chain {chain}: {e}")
+            except Exception as e:
+                logger.error(
+                    f"Error fetching data for chain {chain}: {e}", exc_info=True
+                )
+            await asyncio.sleep(60)
 
 
 class EntityImporter:
