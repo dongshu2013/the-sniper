@@ -259,11 +259,10 @@ Output:
 Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
 new lines. Add a thread marker to the end of each tweet if there are more than one tweet.
 For example, if there are 3 tweets, the output should be:
-```
 tweet_1 (1/3)
 tweet_2 (2/3)
 tweet_3 (3/3)
-```
+
 You don't need to add the thread marker if there is only one tweet.
 """
 
