@@ -25,6 +25,7 @@ def get_gmgn_24h_ranked_groups():
         return []
     result = response.json()
     items = result["data"]["rank"]
+    logger.info(f"Found {len(items)} items")
     for item in items:
         metadata = MemeCoinEntityMetadata(
             launchpad=item["launchpad"],
