@@ -17,7 +17,6 @@ from src.common.types import (
 GMGM_24H_RANKED = "https://gmgn.ai/defi/quotation/v1/rank/sol/swaps/24h?orderby=volume&direction=desc&filters%5B%5D=renounced&filters%5B%5D=frozen"
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_gmgn_24h_ranked_groups():
@@ -117,6 +116,7 @@ class EntityImporter:
 
 
 async def run():
+    logger.setLevel(logging.INFO)
     pg_conn = await asyncpg.connect(DATABASE_URL)
     redis_client = Redis.from_url(REDIS_URL)
     entity_importer = EntityImporter(pg_conn, redis_client)
