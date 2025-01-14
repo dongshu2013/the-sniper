@@ -54,10 +54,15 @@ class GroupQueueProcessor(ProcessorBase):
     async def get_chat_id_from_link(self, tme_link: str) -> str | None:
         parsed = urlparse(tme_link)
         path = parsed.path.strip("/")
-        if path.startswith("+") or "joinchat" in path:
-            entity = await self.client.get_entity(tme_link)  # invite
-        else:
-            entity = await self.client.get_entity(f"t.me/{path}")
+        try:
+            if path.startswith("+") or "joinchat" in path:
+                entity = await self.client.get_entity(tme_link)  # invite
+            else:
+                entity = await self.client.get_entity(f"t.me/{path}")
+        except Exception as e:
+            logger.error(f"Failed to get entity from link {tme_link}: {e}")
+            return None
+
         logger.info(f"Fetched entity: {entity}")
         is_valid = (
             hasattr(entity, "broadcast")  # channels
