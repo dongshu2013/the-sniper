@@ -26,13 +26,12 @@ class GroupInfoUpdater(ProcessorBase):
         updates = []
         async for dialog in self.client.iter_dialogs(ignore_migrated=True):
             if dialog.is_group or dialog.is_channel:
-                logger.info(f"Processing group {dialog.id} with name {dialog.entity}")
                 updates.append(
                     (
                         dialog.id,  # chat_id
                         dialog.name or None,  # name
-                        getattr(dialog.entity, "username", None),  # username
                         getattr(dialog.entity, "about", None),  # about
+                        getattr(dialog.entity, "username", None),  # username
                         getattr(
                             dialog.entity, "participants_count", 0
                         ),  # participants_count
@@ -44,7 +43,8 @@ class GroupInfoUpdater(ProcessorBase):
                 UPDATE chat_metadata SET
                     name = $2,
                     about = $3,
-                    participants_count = $4,
+                    username = $4,
+                    participants_count = $5,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE chat_id = $1
                 """,
