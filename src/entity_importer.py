@@ -1,6 +1,8 @@
 import asyncio
+import json
 import logging
 
+import aiohttp
 import asyncpg
 import requests
 from redis.asyncio import Redis
@@ -14,33 +16,61 @@ from src.common.types import (
 )
 
 # flake8: noqa: E501
-GMGM_24H_RANKED = "https://gmgn.ai/defi/quotation/v1/rank/sol/swaps/24h?orderby=volume&direction=desc&filters%5B%5D=renounced&filters%5B%5D=frozen"
-
 logger = logging.getLogger(__name__)
 
+CHAIN_FILTERS = {
+    "sol": ["renounced", "frozen"],
+    "base": ["not_honeypot", "verified", "renounced"],
+}
 
-def get_gmgn_24h_ranked_groups():
-    response = requests.get(GMGM_24H_RANKED)
-    if response.status_code != 200:
-        return []
-    result = response.json()
-    items = result["data"]["rank"]
-    logger.info(f"Found {len(items)} items")
-    for item in items:
-        metadata = MemeCoinEntityMetadata(
-            launchpad=item["launchpad"],
-            symbol=item["symbol"],
-        )
-        reference = item["chain"] + ":" + item["address"]
-        yield MemeCoinEntity(
-            reference=reference,
-            metadata=metadata,
-            logo=item["logo"],
-            twitter_username=item["twitter_username"],
-            website=item["website"],
-            telegram=item["telegram"],
-            source_link=GMGM_24H_RANKED,
-        )
+
+async def get_gmgn_24h_ranked_groups():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+        "Referer": "https://gmgn.ai/",
+    }
+    async with aiohttp.ClientSession(headers=headers) as session:
+        for chain in ["sol", "base"]:
+            GMGN_24H_VOL_RANKED_URL = (
+                f"https://gmgn.ai/defi/quotation/v1/rank/{chain}/swaps/24h"
+            )
+            params = {
+                "orderby": "volume",
+                "direction": "desc",
+                "filters[]": CHAIN_FILTERS[chain],
+            }
+            async with session.get(GMGN_24H_VOL_RANKED_URL, params=params) as response:
+                response_text = await response.text()
+                if response.status == 200:
+                    data = json.loads(response_text)
+                    items = data.get("data", {}).get("rank", [])
+                    logger.info(f"Found {len(items)} items")
+                    for item in items:
+                        metadata = MemeCoinEntityMetadata(
+                            launchpad=item["launchpad"],
+                            symbol=item["symbol"],
+                        )
+                        reference = item["chain"] + ":" + item["address"]
+                        yield MemeCoinEntity(
+                            reference=reference,
+                            metadata=metadata,
+                            logo=item["logo"],
+                            twitter_username=item["twitter_username"],
+                            website=item["website"],
+                            telegram=item["telegram"],
+                            source_link=GMGN_24H_VOL_RANKED_URL,
+                        )
+                elif response.status == 429:
+                    logger.error(
+                        f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
+                    )
+                    await asyncio.sleep(60)
+                else:
+                    logger.error(
+                        f"Failed to fetch GMGN 24h ranked groups: {response.status_code}"
+                    )
+                    await asyncio.sleep(60)
 
 
 class EntityImporter:
