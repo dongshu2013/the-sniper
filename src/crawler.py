@@ -15,7 +15,7 @@ from src.common.config import (
     chat_messages_key,
     user_chat_key,
 )
-from src.processors.group_processor import ChatProcessor
+from src.processors.group_processor import GroupProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +33,7 @@ async def run():
     logger.info("Telegram bot started successfully")
 
     await register_handlers(listner.client)
-    grp_processor = ChatProcessor(listner.client, PROCESSING_INTERVAL)
+    grp_processor = GroupProcessor(listner.client, PROCESSING_INTERVAL)
 
     try:
         await asyncio.gather(

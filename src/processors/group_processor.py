@@ -21,7 +21,7 @@ MIN_PARTICIPANTS = 50
 MIN_WATCHERS = 2
 
 
-class ChatProcessor:
+class GroupProcessor:
     def __init__(self, client: TelegramClient, interval: int):
         self.client = client
         self.interval = interval
