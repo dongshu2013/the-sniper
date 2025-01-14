@@ -1,6 +1,5 @@
 import os
 import time
-from enum import Enum
 
 from dotenv import load_dotenv
 
@@ -21,29 +20,14 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
 
 
-class ChatStatus(Enum):
-    ACTIVE = "active"
-    NOT_ENOUGH_PARTICIPANTS = "not_enough_participants"
-    NOT_RELATED_TOPIC = "not_related_topic"
-    ENOUGH_WATCHERS = "enough_watchers"
-
-
-def chat_watchers_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:watchers"
-
-
-def chat_info_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:info"
-
-
-def user_chat_key(user_id: str, chat_id: str):
-    return f"{SERVICE_PREFIX}:user:{user_id}:chat:{chat_id}"
-
-
 def chat_per_hour_stats_key(chat_id: str, metric: str):
     hour = int(time.time() / 3600)
     return f"{SERVICE_PREFIX}:chat:{chat_id}:per_hour_stats:{hour}:{metric}"
 
 
-def chat_messages_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:messages"
+def message_seen_key(chat_id: str, message_id: str):
+    return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
+
+
+def chat_indexed_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:indexed"

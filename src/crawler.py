@@ -1,22 +1,20 @@
 import asyncio
-import json
 import logging
 import time
 
+import asyncpg
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
 from src.common.bot_client import TelegramListener
 from src.common.config import (
-    PROCESSING_INTERVAL,
+    DATABASE_URL,
     REDIS_URL,
-    SERVICE_PREFIX,
-    ChatStatus,
-    chat_messages_key,
-    user_chat_key,
+    chat_indexed_key,
+    chat_per_hour_stats_key,
+    message_seen_key,
 )
 from src.processors.group_importer import GroupImporter
-from src.processors.group_processor import GroupProcessor
 
 # Create logger instance
 logging.basicConfig(level=logging.INFO)
@@ -27,29 +25,26 @@ redis_client = Redis.from_url(REDIS_URL)
 
 async def run():
     # Initialize bot
-    logger.info("Initializing Telegram bot")
     listner = TelegramListener()
-    logger.info("Starting Telegram bot")
     await listner.start()
     logger.info("Telegram bot started successfully")
 
-    await register_handlers(listner.client)
-    grp_importer = GroupImporter(listner.client)
-    grp_processor = GroupProcessor(listner.client, PROCESSING_INTERVAL)
+    pg_conn = await asyncpg.connect(DATABASE_URL)
+
+    await register_handlers(listner.client, pg_conn)
+    grp_importer = GroupImporter(listner.client, pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
-            grp_processor.start_processing(),
             grp_importer.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        await grp_processor.stop_processing()
         await listner.stop()
 
 
-async def register_handlers(client: TelegramClient):
+async def register_handlers(client: TelegramClient, pg_conn: asyncpg.Connection):
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
@@ -62,45 +57,34 @@ async def register_handlers(client: TelegramClient):
 
         chat_id = str(event.chat_id)
         message_id = str(event.id)
-        me = await client.get_me()
-        should_process = await should_process_message(chat_id, me.id, message_id)
-        if not should_process:
+        if not await should_process_message(chat_id, message_id):
             return
 
+        await pg_conn.execute(
+            """
+            INSERT INTO chat_messages
+                (message_id, chat_id, message_text,
+                    sender_id, message_timestamp)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (chat_id, message_id) DO NOTHING
+            """,
+            message_id,
+            chat_id,
+            message_text,
+            str(event.sender_id),
+            int(event.date.timestamp()),
+        )
         pipelines = redis_client.pipeline()
         pipelines.set(message_seen_key(chat_id, message_id), int(time.time()))
-        pipelines.lpush(
-            chat_messages_key(chat_id),
-            json.dumps(
-                {
-                    "message_id": event.id,
-                    "sender": event.sender_id,
-                    "message": message_text,
-                    "timestamp": int(event.date.timestamp()),
-                }
-            ),
-        )
+        pipelines.incr(chat_per_hour_stats_key(chat_id, "num_of_messages"), 1)
         await pipelines.execute()
 
 
-def message_seen_key(chat_id: str, message_id: str):
-    return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
-
-
-async def should_process_message(chat_id: str, user_id: str, message_id: str) -> bool:
-    status, seen = await redis_client.mget(
-        user_chat_key(user_id, chat_id),
-        message_seen_key(chat_id, message_id),
+async def should_process_message(chat_id: str, message_id: str) -> bool:
+    seen, indexed = await redis_client.mget(
+        message_seen_key(chat_id, message_id), chat_indexed_key(chat_id)
     )
-
-    if status is None:
-        return False
-
-    status = json.loads(status)
-    if status["status"] != ChatStatus.ACTIVE.value:
-        return False
-
-    return seen is None
+    return seen is not None and indexed is not None
 
 
 def main():

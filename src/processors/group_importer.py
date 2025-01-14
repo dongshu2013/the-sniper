@@ -3,8 +3,12 @@ import logging
 import time
 from urllib.parse import urlparse
 
+import asyncpg
 from pydantic import BaseModel
+from redis.asyncio import Redis
 from telethon import TelegramClient
+
+from src.common.config import chat_indexed_key
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +22,12 @@ class ChatMetadata(BaseModel):
 
 
 class GroupImporter:
-    def __init__(self, client: TelegramClient):
+    def __init__(
+        self, client: TelegramClient, redis_client: Redis, pg_conn: asyncpg.Connection
+    ):
         self.client = client
+        self.redis_client = redis_client
+        self.pg_conn = pg_conn
         self.running = False
         self.interval = 300
 
@@ -39,7 +47,7 @@ class GroupImporter:
         """Process unprocessed groups from chat metadata table"""
         try:
             # Get unprocessed groups from database
-            async with self.db.acquire() as conn:
+            async with self.pg_conn.acquire() as conn:
                 unprocessed = await conn.fetch(
                     """
                     SELECT id, tme_link
@@ -73,10 +81,18 @@ class GroupImporter:
                                 int(time.time()),
                                 record["id"],
                             )
+                            await self.redis_client.set(
+                                chat_indexed_key(group_info.chat_id), int(time.time())
+                            )
                             logger.info(f"Processed group {group_info.name}")
                     except Exception as e:
                         logger.error(
                             f"Error processing group {record['tme_link']}: {e}"
+                        )
+                        await conn.execute(
+                            "UPDATE chat_metadata SET processed_at = $1 WHERE id = $2",
+                            -1,
+                            record["id"],
                         )
         except Exception as e:
             logger.error(f"Database error in process_groups: {e}")
@@ -85,7 +101,7 @@ class GroupImporter:
         parsed = urlparse(tme_link)
         path = parsed.path.strip("/")
         if path.startswith("+") or "joinchat" in path:
-            entity = await self.client.get_entity(tme_link)
+            entity = await self.client.get_entity(tme_link)  # invite
         else:
             entity = await self.client.get_entity(f"t.me/{path}")
         return ChatMetadata(
