@@ -10,6 +10,7 @@ from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL, REDIS_URL
+from src.processors.processor import ProcessorBase
 
 # flake8: noqa
 # format off
@@ -58,31 +59,14 @@ logger.setLevel(logging.INFO)
 MIN_SUMMARY_INTERVAL = 3600 * 6  # every 6 hours
 
 
-class ChatScoreSummarizer:
-    def __init__(self, interval: int = MIN_SUMMARY_INTERVAL):
-        self.client = AgentClient()
-        self.pg_conn = None
-        self.redis_client = Redis.from_url(REDIS_URL)
-        self.interval = interval
-        self.running = False
+class ChatScoreSummarizer(ProcessorBase):
+    def __init__(self, pg_conn: asyncpg.Connection):
+        super().__init__(interval=MIN_SUMMARY_INTERVAL)
+        self.pg_conn = pg_conn
         self.last_processed_time = 0
 
     async def start_processing(self):
-        self.running = True
-        # Connect to database and create table if it doesn't exist
-        self.pg_conn = await asyncpg.connect(DATABASE_URL)
-        self.last_processed_time = await self._get_last_message_timestamp()
         logger.info(f"Last processed time: {self.last_processed_time}")
-
-        while self.running:
-            try:
-                logger.info(
-                    f"Processing score summaries for all chats at {self.last_processed_time}"
-                )
-                await self.evaluate_all()
-                await asyncio.sleep(self.interval)
-            except Exception as e:
-                logger.error(f"Error in group processing: {e}")
 
     async def _get_last_message_timestamp(self) -> int:
         result = await self.pg_conn.fetchval(
@@ -94,6 +78,9 @@ class ChatScoreSummarizer:
 
     async def evaluate_all(self) -> None:
         """Evaluate all chat groups that have messages."""
+        if self.last_processed_time == 0:
+            self.last_processed_time = await self._get_last_message_timestamp()
+
         # Get all unique chat IDs
         current_time = int(time.time())
         chat_ids = await self.pg_conn.fetch(
@@ -163,11 +150,6 @@ class ChatScoreSummarizer:
             len(set(msg["sender_id"] for msg in messages)),
             current_time,
         )
-
-    async def stop_processing(self):
-        self.running = False
-        if self.pg_conn:
-            await self.pg_conn.close()
 
     async def get_unprocessed_messages(self, chat_id: int, current_time: int) -> list:
         query = """

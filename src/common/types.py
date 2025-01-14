@@ -27,9 +27,8 @@ class MemeCoinEntity(BaseModel):
 class ChatMetadata(BaseModel):
     chat_id: str
     name: str
-    about: str
-    participants_count: str
-    entity_id: int
+    about: Optional[str]
+    participants_count: int
     processed_at: int
 
 

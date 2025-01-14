@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from typing import Dict, List
@@ -9,6 +8,7 @@ from redis.asyncio import Redis
 
 from src.common.config import MESSAGE_QUEUE_KEY
 from src.common.types import ChatMessage
+from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,36 +17,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class MessageQueueProcessor:
+class MessageQueueProcessor(ProcessorBase):
     def __init__(
         self,
         redis_client: Redis,
         pg_conn: asyncpg.Connection,
         batch_size: int = 100,
-        interval: float = 1.0,
     ):
+        super().__init__(interval=1)
         self.redis_client = redis_client
         self.pg_conn = pg_conn
         self.batch_size = batch_size
-        self.interval = interval
-        self.running = False
 
-    async def start_processing(self):
-        self.running = True
-        logger.info("starting message queue processor")
-        while self.running:
-            try:
-                processed = await self.process_batch()
-                if not processed:  # If no messages were processed
-                    await asyncio.sleep(self.interval)
-            except Exception as e:
-                logger.error(f"Error processing message batch: {e}")
-                await asyncio.sleep(self.interval)
-
-    async def stop_processing(self):
-        self.running = False
-
-    async def process_batch(self) -> int:
+    async def process(self) -> int:
         messages: List[Dict] = []
 
         # Get batch of messages from Redis in a single operation

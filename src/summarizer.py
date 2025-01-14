@@ -1,6 +1,9 @@
 import asyncio
 import logging
 
+import asyncpg
+
+from src.common.config import DATABASE_URL
 from src.processors.score_summarizer import ChatScoreSummarizer
 
 # Create logger instance
@@ -9,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 async def run():
-    score_summarizer = ChatScoreSummarizer()
+    pg_conn = await asyncpg.connect(DATABASE_URL)
+    score_summarizer = ChatScoreSummarizer(pg_conn)
     try:
         await asyncio.gather(
             score_summarizer.start_processing(),
@@ -17,6 +21,8 @@ async def run():
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         await score_summarizer.stop_processing()
+    finally:
+        await pg_conn.close()
 
 
 def main():

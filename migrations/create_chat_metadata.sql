@@ -2,10 +2,9 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    entity_id INTEGER,
-    about TEXT,
-    participants_count INTEGER,
-    processed_at BIGINT,
+    entity_id INTEGER DEFAULT NULL,
+    about TEXT DEFAULT '',
+    participants_count INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

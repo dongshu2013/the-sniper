@@ -15,6 +15,7 @@ from src.common.config import (
 )
 from src.common.types import ChatMessage
 from src.processors.group_indexer import GroupIndexer
+from src.processors.group_info_updater import GroupInfoUpdater
 from src.processors.msg_queue_processor import MessageQueueProcessor
 
 # Create logger instance
@@ -36,12 +37,14 @@ async def run():
 
     await register_handlers(listner.client, pg_conn)
     grp_indexer = GroupIndexer(listner.client, redis_client, pg_conn)
+    grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
             grp_indexer.start_processing(),
+            grp_info_updater.start_processing(),
             msg_queue_processor.start_processing(),
         )
     except KeyboardInterrupt:

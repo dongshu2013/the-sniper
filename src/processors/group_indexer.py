@@ -1,6 +1,4 @@
-import asyncio
 import logging
-import time
 from urllib.parse import urlparse
 
 import asyncpg
@@ -13,6 +11,7 @@ from src.common.config import (
     tg_link_status_key,
 )
 from src.common.types import ChatMetadata, EntityGroupItem
+from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,34 +20,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class GroupIndexer:
+class GroupQueueProcessor(ProcessorBase):
     def __init__(
         self, client: TelegramClient, redis_client: Redis, pg_conn: asyncpg.Connection
     ):
+        super().__init__(interval=10)
         self.client = client
         self.redis_client = redis_client
         self.pg_conn = pg_conn
-        self.running = False
-        self.interval = 10
-        self.dialogs = {}
         self.me = None
-
-    async def start_processing(self):
-        self.running = True
-        dialogs = await self.client.get_dialogs(archived=False)
-        self.dialogs = {d.id: d for d in dialogs if d.is_group or d.is_channel}
-        logger.info(f"Loaded {len(self.dialogs)} dialogs")
-        self.me = await self.client.get_me()
-        logger.info(f"Loaded self account: {self.me.id}")
-        while self.running:
-            try:
-                await self.process()
-                await asyncio.sleep(self.interval)
-            except Exception as e:
-                logger.error(f"Error in group processing: {e}")
-
-    async def stop_processing(self):
-        self.running = False
 
     async def process(self):
         """Process unprocessed groups from chat metadata table"""
@@ -65,80 +45,91 @@ class GroupIndexer:
             return
 
         logger.info(f"Processing group: {item.telegram_link}")
-        result = await self.fetch_and_store_group_info(item)
-        await self.redis_client.set(
-            link_status_key, "success" if result["success"] else result["error"]
-        )
-        if result["success"]:
-            await self.try_to_join_channel(result["metadata"])
+        chat_id = await self.get_info_from_link(item.telegram_link)
+        await self.redis_client.set(link_status_key, "success" if chat_id else "failed")
+        if not chat_id:
+            return
+        await self.update_entity_id(chat_id, item.entity_id)
+        await self.try_to_join_channel(chat_id)
 
-    async def fetch_and_store_group_info(
-        self, item: EntityGroupItem
-    ) -> ChatMetadata | str:
-        try:
-            metadata = await self.get_info_from_link(item.telegram_link)
-            logger.info(f"Fetched group info: {metadata}")
-            if not metadata:
-                logger.info(f"Group {item.telegram_link} is not a group")
-                return {"success": False, "error": "not_a_group"}
-            await self.pg_conn.execute(
-                """
-                INSERT INTO chat_metadata (
-                    chat_id, name, about, participants_count,
-                    processed_at, entity_id
-                )
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (chat_id) DO UPDATE
-                SET name = EXCLUDED.name,
-                    about = EXCLUDED.about,
-                    participants_count = EXCLUDED.participants_count,
-                    processed_at = EXCLUDED.processed_at
-                """,
-                metadata.chat_id,
-                metadata.name,
-                metadata.about,
-                metadata.participants_count,
-                int(time.time()),
-                item.entity_id,
-            )
-            logger.info(f"Group {metadata.chat_id} processed successfully")
-            return {"success": True, "metadata": metadata}
-        except Exception as e:
-            logger.error(f"Database error in fetch_and_store_group_info: {e}")
-            return {"success": False, "error": "unknown_error"}
-
-    async def get_info_from_link(self, tme_link: str) -> ChatMetadata | None:
+    async def get_chat_id_from_link(self, tme_link: str) -> str | None:
         parsed = urlparse(tme_link)
         path = parsed.path.strip("/")
         if path.startswith("+") or "joinchat" in path:
             entity = await self.client.get_entity(tme_link)  # invite
         else:
             entity = await self.client.get_entity(f"t.me/{path}")
-        if not entity.is_channel and not entity.is_group:
-            return None
-        return ChatMetadata(
-            chat_id=entity.id,
-            name=entity.title,
-            about=entity.about,
-            participants_count=entity.participants_count,
-            processed_at=int(time.time()),
+        logger.info(f"Fetched entity: {entity}")
+        is_valid = (
+            hasattr(entity, "broadcast")  # channels
+            or hasattr(entity, "megagroup")  # supergroups
+            or getattr(entity, "chat", False)  # normal groups
         )
+        if not is_valid:
+            logger.info(f"Group {tme_link} is not a group")
+            return None
+        return entity.id
 
-    async def try_to_join_channel(self, metadata: ChatMetadata):
-        if metadata.chat_id in self.dialogs:
-            logger.info(f"Group {metadata.chat_id} already joined")
-            return  # already joined
-
-        watchers = await self.redis_client.llen(chat_watched_by_key(metadata.chat_id))
+    async def try_to_join_channel(self, chat_id: str):
+        watchers = await self.redis_client.llen(chat_watched_by_key(chat_id))
         if watchers > 0:
-            logger.info(f"Group {metadata.chat_id} already watched by other bots")
+            logger.info(f"Group {chat_id} already watched by other bots")
             return  # already watched by other bots
 
         try:
-            logger.info(f"Joining group {metadata.chat_id}")
-            await self.client.join_chat(metadata.chat_id)
-            await self.redis_client.lpush(
-                chat_watched_by_key(metadata.chat_id), self.me.id
+            logger.info(f"Joining group {chat_id}")
+            await self.client.join_chat(chat_id)
+            await self.redis_client.lpush(chat_watched_by_key(chat_id), self.me.id)
+        except Exception as e:
+            logger.error(f"Failed to join channel {chat_id}: {e}")
+
+    async def update_entity_id(
+        self,
+        chat_id: str,
+        entity_id: int,
+    ) -> ChatMetadata | str:
+        try:
+            await self.pg_conn.execute(
+                """
+                INSERT INTO chat_metadata (chat_id, entity_id)
+                VALUES ($1, $2)
+                ON CONFLICT (chat_id) DO UPDATE
+                SET entity_id = EXCLUDED.entity_id
+                """,
+                chat_id,
+                entity_id,
             )
         except Exception as e:
-            logger.error(f"Failed to join channel {metadata.chat_id}: {e}")
+            logger.error(f"Database error in update_entity_id: {e}")
+
+    async def update_all_groups(self):
+        updates = []
+        async for dialog in self.client.iter_dialogs(ignore_migrated=True):
+            if dialog.is_group or dialog.is_channel:
+                updates.append(
+                    (
+                        dialog.id,  # chat_id
+                        dialog.dialog.name or None,  # name
+                        dialog.dialog.about or None,  # about
+                        dialog.dialog.participants_count or 0,  # participants_count
+                    )
+                )
+        if updates:
+            await self.pg_conn.executemany(
+                """
+                INSERT INTO chat_metadata (
+                    chat_id,
+                    name,
+                    about,
+                    participants_count,
+                    updated_at
+                ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+                ON CONFLICT (chat_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    about = EXCLUDED.about,
+                    participants_count = EXCLUDED.participants_count,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                updates,
+            )
+            logger.info(f"Processed {len(updates)} groups successfully")
