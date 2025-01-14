@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS chat_metadata (
     id SERIAL PRIMARY KEY,
-    chat_id VARCHAR(255) UNIQUE NOT NULL,
-    tme_link VARCHAR(255) NOT NULL, -- t.me link
-    name VARCHAR(255) NOT NULL,
+    chat_id VARCHAR(255) UNIQUE,
+    tme_link VARCHAR(255), -- t.me link
+    name VARCHAR(255),
     category VARCHAR(50),
     source_link VARCHAR(512),
     twitter VARCHAR(255),

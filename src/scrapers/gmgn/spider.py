@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright
 from scrapy.selector import Selector
 
 from ..base import BaseSpider
-from .items import MemeItem
+from .items import ChatMetadata
 from .pipeline import PostgresPipeline
 from ..config import PLAYWRIGHT_CONFIG, DOWNLOAD_DELAY
 
@@ -76,25 +76,36 @@ class GmgnSpider(BaseSpider):
                 x_account = meme.xpath(".//a[@aria-label='twitter']/@href").get()
                 website = meme.xpath(".//a[@aria-label='website']/@href").get()
                 
-                # Skip if no anyone social links
+                # Skip if no social links
                 if not (tg_account or x_account or website):
                     continue
                     
-                item = MemeItem()
-                item.source = "gmgn"
-                item.category = "meme_project"
-                item.tg_account = tg_account
-                item.x_account = x_account
-                item.website = website
-                item.ticker = meme.xpath(".//div[@title]/@title").get()
-                # TODO fix get address from `<a href="/sol/token/Dfh5DzRgSvvCFDoYc2ciTkMrbDfRKybA4SoFbPmApump">`
-                item.address = meme.xpath(".//p[contains(@class, 'chakra-text')]/text()").get()
-                chain_img = meme.xpath("//div[starts-with(@id, 'menu-button-')]//img[@alt='network']/@src").get()
-                if chain_img:
-                    # get `chain` from "/static/img/chain.webp"
-                    item.chain = chain_img.split('/')[-1].split('.')[0]
+                item = ChatMetadata()
                 
-                if not item.ticker:
+                # Set basic fields
+                item.category = "meme_project"
+                item.tme_link = tg_account
+                item.twitter = x_account
+                item.website = website
+                item.source_link = self.start_urls[0]  # gmgn.ai URL
+                
+                # Build entity dictionary
+                ticker = meme.xpath(".//div[@title]/@title").get()
+                address = meme.xpath(".//a[contains(@href, '/token/')]/@href").extract_first()
+                if address:
+                    # Extract token address from URL path
+                    address = address.split('/token/')[-1]
+                    
+                chain_img = meme.xpath("//div[starts-with(@id, 'menu-button-')]//img[@alt='network']/@src").get()
+                chain = chain_img.split('/')[-1].split('.')[0] if chain_img else None
+                
+                item.entity = {
+                    'chain': chain,
+                    'address': address,
+                    'ticker': ticker
+                }
+                
+                if not ticker:
                     self.logger.warning(f"Skipping item due to missing ticker: {item}")
                     continue
                     

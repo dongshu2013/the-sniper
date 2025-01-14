@@ -1,13 +1,16 @@
 from dataclasses import dataclass
 
 @dataclass
-class MemeItem:
+class ChatMetadata:
     def __init__(self):
-        self.tg_account = None # telegram account of the meme
-        self.source = None # source of the meme
-        self.chain = None # chain of the meme
-        self.address = None # address of the meme
-        self.x_account = None # x account of the meme
-        self.website = None # website of the meme
-        self.ticker = None # ticker of the meme
-        self.category = None # category of the meme
+        self.chat_id: str = None
+        self.tme_link: str = None  # t.me link
+        self.name: str = None
+        self.category: str = None
+        self.source_link: str = None
+        self.twitter: str = None
+        self.website: str = None
+        self.entity: dict = None  # {chain, address, ticker}
+        self.about: str = None
+        self.participants_count: int = None
+        self.processed_at: int = None
