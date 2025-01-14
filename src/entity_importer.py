@@ -111,7 +111,9 @@ class EntityImporter:
             for entity_id, entity_data in zip(entity_ids, entities_data)
             if entity_data[6]
         ]
-        await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
+        logger.info(f"Importing {len(group_info)} groups")
+        if group_info:
+            await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
 
 
 async def run():
