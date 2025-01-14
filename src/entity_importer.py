@@ -100,7 +100,7 @@ async def import_gmgn_24h_ranked_groups():
                     twitter_username=item["twitter_username"],
                     website=item["website"],
                     telegram=item["telegram"],
-                    source_link="local_file",
+                    source_link=f.name,
                 )
     except FileNotFoundError:
         logger.error("Local JSON file not found")

@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -10,17 +11,17 @@ class EntityType(Enum):
 
 class MemeCoinEntityMetadata(BaseModel):
     symbol: str
-    launchpad: str
+    launchpad: Optional[str]
 
 
 class MemeCoinEntity(BaseModel):
     reference: str
     metadata: MemeCoinEntityMetadata
-    logo: str
-    twitter_username: str
-    website: str
-    telegram: str
-    source_link: str
+    logo: Optional[str]
+    twitter_username: Optional[str]
+    website: Optional[str]
+    telegram: Optional[str]
+    source_link: Optional[str]
 
 
 class ChatMetadata(BaseModel):
