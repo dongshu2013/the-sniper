@@ -42,7 +42,10 @@ Output Instructions:
 - You will need to output and only output a JSON object with the following fields:
   - score: The score of the chat group from 0 to 10.
   - summary: A short summary of what happened in the chat group and why you give the score.
-  - highlights: select some highlights from from the chat messages such as high-quality discussions, events, product updates and partnership updates.
+  - highlights: select some highlights from from the chat messages such as high-quality discussions,
+    events, product updates and partnership updates. Combine all highlights into a single string and
+    separate each highlight by a comma. You don't need to include the user information in the highlight,
+    only share what happened to the project briefly.
 """
 # format on
 
