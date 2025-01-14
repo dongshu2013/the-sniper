@@ -172,3 +172,6 @@ cython_debug/
 
 *.session
 *.session-journal
+
+# ChatGPT Driven Development Record
+CDDR*.md
