@@ -58,7 +58,7 @@ logger.setLevel(logging.INFO)
 MIN_SUMMARY_INTERVAL = 3600 * 6  # every 6 hours
 
 
-class ChatScoreSummaryProcessor:
+class ChatScoreSummarizer:
     def __init__(self, interval: int = MIN_SUMMARY_INTERVAL):
         self.client = AgentClient()
         self.pg_conn = None
