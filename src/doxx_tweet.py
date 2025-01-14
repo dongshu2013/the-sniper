@@ -20,7 +20,7 @@ from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL, REDIS_URL
-from src.processors.score_summary import MIN_SUMMARY_INTERVAL
+from src.processors.score_summarizer import MIN_SUMMARY_INTERVAL
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

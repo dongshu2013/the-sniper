@@ -16,6 +16,7 @@ from src.common.config import (
 from src.common.types import ChatMetadata, EntityGroupItem
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class GroupImporter:
