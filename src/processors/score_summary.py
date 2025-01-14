@@ -42,7 +42,7 @@ Output Instructions:
 - You will need to output and only output a JSON object with the following fields:
   - score: The score of the chat group from 0 to 10.
   - summary: A short summary of what happened in the chat group and why you give the score.
-  - highlights: Some highlights from user's messages from the chat group, separated by comma.
+  - highlights: select some highlights from from the chat messages per your obervation, separated by comma.
 """
 # format on
 
