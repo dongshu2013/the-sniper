@@ -27,7 +27,7 @@ class GroupImporter:
         self.redis_client = redis_client
         self.pg_conn = pg_conn
         self.running = False
-        self.interval = 5
+        self.interval = 10
         self.dialogs = {}
         self.me = None
 
@@ -60,7 +60,6 @@ class GroupImporter:
             logger.info(f"Group {item.telegram_link} already processed")
             return
 
-        logger.info(f"Processing group {item.telegram_link}")
         result = await self.fetch_and_store_group_info(item)
         await self.redis_client.set(
             link_status_key, "success" if result["success"] else result["error"]
@@ -72,6 +71,7 @@ class GroupImporter:
         self, item: EntityGroupItem
     ) -> ChatMetadata | str:
         try:
+            logger.info(f"Fetching group info for {item.telegram_link}")
             metadata = await self.get_info_from_link(item.telegram_link)
             if not metadata:
                 return {"success": False, "error": "not_a_group"}
@@ -121,10 +121,12 @@ class GroupImporter:
 
     async def try_to_join_channel(self, metadata: ChatMetadata):
         if metadata.chat_id in self.dialogs:
+            logger.info(f"Group {metadata.chat_id} already joined")
             return  # already joined
 
         watchers = await self.redis_client.llen(chat_watched_by_key(metadata.chat_id))
         if watchers > 0:
+            logger.info(f"Group {metadata.chat_id} already watched by other bots")
             return  # already watched by other bots
 
         try:
