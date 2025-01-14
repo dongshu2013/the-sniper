@@ -10,7 +10,6 @@ from src.common.bot_client import TelegramListener
 from src.common.config import (
     DATABASE_URL,
     REDIS_URL,
-    chat_indexed_key,
     chat_per_hour_stats_key,
     message_seen_key,
 )
@@ -57,7 +56,8 @@ async def register_handlers(client: TelegramClient, pg_conn: asyncpg.Connection)
 
         chat_id = str(event.chat_id)
         message_id = str(event.id)
-        if not await should_process_message(chat_id, message_id):
+        seen = await redis_client.get(message_seen_key(chat_id, message_id))
+        if seen:
             return
 
         await pg_conn.execute(
@@ -78,13 +78,6 @@ async def register_handlers(client: TelegramClient, pg_conn: asyncpg.Connection)
         pipelines.set(message_seen_key(chat_id, message_id), int(time.time()))
         pipelines.incr(chat_per_hour_stats_key(chat_id, "num_of_messages"), 1)
         await pipelines.execute()
-
-
-async def should_process_message(chat_id: str, message_id: str) -> bool:
-    seen, indexed = await redis_client.mget(
-        message_seen_key(chat_id, message_id), chat_indexed_key(chat_id)
-    )
-    return seen is not None and indexed is not None
 
 
 def main():

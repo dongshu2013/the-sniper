@@ -9,7 +9,6 @@ from telethon import TelegramClient
 
 from src.common.config import (
     PENDING_TG_GROUPS_KEY,
-    chat_indexed_key,
     chat_watched_by_key,
     tg_link_status_key,
 )
@@ -95,7 +94,6 @@ class GroupImporter:
                 int(time.time()),
                 item.entity_id,
             )
-            self.redis_client.set(chat_indexed_key(metadata.chat_id), "true")
             logger.info(f"Group {metadata.chat_id} processed successfully")
             return {"success": True, "metadata": metadata}
         except Exception as e:

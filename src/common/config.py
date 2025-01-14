@@ -32,10 +32,6 @@ def message_seen_key(chat_id: str, message_id: str):
     return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
 
 
-def chat_indexed_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:indexed"
-
-
 def tg_link_status_key(tg_link: str):
     return f"{SERVICE_PREFIX}:tg_link:{tg_link}:status"
 
