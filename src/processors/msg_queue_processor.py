@@ -10,8 +10,11 @@ from redis.asyncio import Redis
 from src.common.config import MESSAGE_QUEUE_KEY
 from src.common.types import ChatMessage
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class MessageQueueProcessor:
@@ -30,6 +33,7 @@ class MessageQueueProcessor:
 
     async def start_processing(self):
         self.running = True
+        logger.info("starting message queue processor")
         while self.running:
             try:
                 processed = await self.process_batch()

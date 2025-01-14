@@ -18,7 +18,10 @@ from src.processors.group_indexer import GroupIndexer
 from src.processors.msg_queue_processor import MessageQueueProcessor
 
 # Create logger instance
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 redis_client = Redis.from_url(REDIS_URL)
