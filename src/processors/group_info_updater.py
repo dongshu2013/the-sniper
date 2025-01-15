@@ -26,9 +26,14 @@ class GroupInfoUpdater(ProcessorBase):
         updates = []
         async for dialog in self.client.iter_dialogs(ignore_migrated=True):
             if dialog.is_group or dialog.is_channel:
+                chat_id = str(dialog.id)
+                if chat_id.startswith("-100"):
+                    chat_id = chat_id[4:]
+
+                logger.info(f"Updating group {chat_id} with name {dialog.name}")
                 updates.append(
                     (
-                        str(dialog.id),  # chat_id
+                        chat_id,  # normalized chat_id
                         dialog.name or None,  # name
                         getattr(dialog.entity, "about", None),  # about
                         getattr(dialog.entity, "username", None),  # username
