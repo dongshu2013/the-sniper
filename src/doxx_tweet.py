@@ -59,7 +59,7 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
         SELECT DISTINCT ON (chat_id)
             chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
         FROM chat_score_summaries
-        WHERE last_message_timestamp > (EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')::bigint)
+        WHERE last_message_timestamp > $1
         ORDER BY chat_id, last_message_timestamp DESC
     )
     SELECT
@@ -80,6 +80,10 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
     logger.info(f"Last message timestamp: {last_message_ts}")
     results = await pg_conn.fetch(query, last_message_ts)
     logger.info(f"Found {len(results)} meme coins chat groups")
+
+    if not results:
+        logger.info("No data available for leaderboard")
+        return "🤔 Hmm... It's unusually quiet in the meme coin world right now! Stay tuned for more updates as communities wake up! 💤"
 
     max_user_count = max(result["unique_users_count"] for result in results)
     max_msg_count = max(result["messages_count"] for result in results)
