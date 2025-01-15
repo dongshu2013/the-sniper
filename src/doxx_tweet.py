@@ -106,6 +106,7 @@ LIMIT 10
 """
     logger.info(f"Getting chat scores and summary")
     last_message_ts = int(time.time() - MIN_SUMMARY_INTERVAL)
+    logger.info(f"Last message timestamp: {last_message_ts}")
     results = await pg_conn.fetch(query, last_message_ts)
     logger.info(f"Found {len(results)} meme coins chat groups")
 

@@ -60,6 +60,9 @@ async def register_handlers(client: TelegramClient):
             return
 
         chat_id = str(event.chat_id)
+        if chat_id.startswith("-100"):
+            chat_id = chat_id[4:]
+
         message_id = str(event.id)
         if await redis_client.exists(message_seen_key(chat_id, message_id)):
             return
