@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     message_timestamp BIGINT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)
-)
+);
 
 -- Index for querying messages by chat_id
 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id);
