@@ -14,6 +14,7 @@ from src.common.config import (
     message_seen_key,
 )
 from src.common.types import ChatMessage
+from src.processors.entity_importer import EntityImporter
 from src.processors.group_info_updater import GroupInfoUpdater
 from src.processors.group_queue_processor import GroupQueueProcessor
 from src.processors.msg_queue_processor import MessageQueueProcessor
@@ -37,6 +38,7 @@ async def run():
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
     await register_handlers(listner.client)
+    entity_importer = EntityImporter(redis_client)
     grp_queue_processor = GroupQueueProcessor(listner.client, redis_client, pg_conn)
     grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
@@ -45,6 +47,7 @@ async def run():
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
+            entity_importer.start_processing(),
             grp_queue_processor.start_processing(),
             grp_info_updater.start_processing(),
             msg_queue_processor.start_processing(),

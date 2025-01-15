@@ -3,10 +3,9 @@ import json
 import logging
 
 import aiohttp
-import asyncpg
 from redis.asyncio import Redis
 
-from src.common.config import DATABASE_URL, PENDING_TG_GROUPS_KEY, REDIS_URL
+from src.common.config import PENDING_TG_GROUPS_KEY, REDIS_URL
 from src.common.types import (
     EntityGroupItem,
     EntityType,
@@ -112,9 +111,8 @@ async def import_gmgn_24h_ranked_groups():
 
 
 class EntityImporter(ProcessorBase):
-    def __init__(self, pg_conn: asyncpg.Connection, redis_client: Redis):
-        super().__init__(interval=300)
-        self.pg_conn = pg_conn
+    def __init__(self, redis_client: Redis):
+        super().__init__(interval=600)
         self.redis_client = redis_client
 
     async def process(self):
@@ -151,31 +149,3 @@ class EntityImporter(ProcessorBase):
         logger.info(f"Importing {len(group_info)} groups")
         if group_info:
             await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
-
-
-async def run():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logger.setLevel(logging.INFO)
-    logger.info("Starting entity importer...")
-
-    pg_conn = await asyncpg.connect(DATABASE_URL)
-    redis_client = Redis.from_url(REDIS_URL)
-    entity_importer = EntityImporter(pg_conn, redis_client)
-    try:
-        await asyncio.gather(
-            entity_importer.start_processing(),
-        )
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-        await entity_importer.stop_processing()
-
-
-def main():
-    asyncio.run(run())
-
-
-if __name__ == "__main__":
-    main()
