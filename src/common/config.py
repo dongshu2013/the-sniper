@@ -39,3 +39,7 @@ def tg_link_status_key(tg_link: str):
 
 def chat_watched_by_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:watched_by"
+
+
+def chat_entity_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:entity"

@@ -9,6 +9,7 @@ from telethon.tl.functions.channels import JoinChannelRequest
 
 from src.common.config import (
     PENDING_TG_GROUPS_KEY,
+    chat_entity_key,
     chat_watched_by_key,
     tg_link_status_key,
 )
@@ -51,6 +52,7 @@ class GroupQueueProcessor(ProcessorBase):
             return
 
         await self.update_entity_id(str(chat_id), item.entity_id)
+        await self.redis_client.set(chat_entity_key(chat_id), str(item.entity_id))
         success = await self.try_to_join_channel(item.entity_id, chat_id)
         if success:
             await self.redis_client.set(link_status_key, "success")
