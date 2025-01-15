@@ -78,7 +78,6 @@ class GroupInfoUpdater(ProcessorBase):
 
     async def process(self):
         updates = []
-        logger.debug("---Starting group info update process")
         async for dialog in self.client.iter_dialogs(ignore_migrated=True):
             if not dialog.is_group and not dialog.is_channel:
                 continue
@@ -114,7 +113,6 @@ class GroupInfoUpdater(ProcessorBase):
                 await self._update_chat_tags(chat_id, quality_info)
 
         # Batch update metadata
-        logger.info(f"---Attempting to update metadata for {len(updates)} groups")
         if updates:
             await self._batch_update_metadata(updates)
 
