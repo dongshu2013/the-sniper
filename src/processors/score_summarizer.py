@@ -7,6 +7,7 @@ from datetime import datetime
 import asyncpg
 
 from src.common.agent_client import AgentClient
+from src.common.utils import parse_ai_response
 from src.processors.processor import ProcessorBase
 
 # flake8: noqa
@@ -120,12 +121,7 @@ class ChatScoreSummarizer(ProcessorBase):
                 },
             ]
         )
-        try:
-            result = response["choices"][0]["message"]["content"]
-            result = self._parse_ai_response(result)
-        except Exception as e:
-            logger.error(f"Error parsing AI response for chat {chat_id}: {e}")
-            return
+        result = parse_ai_response(response, ["score", "summary", "highlights"])
 
         # Store the report
         logger.info(f"Storing report for chat {chat_id} at {current_time}")
@@ -168,40 +164,3 @@ class ChatScoreSummarizer(ProcessorBase):
                 f"[{timestamp}] User {msg['sender_id']}: {msg['message_text']}"
             )
         return "\n".join(conversation_lines)
-
-    def _parse_ai_response(self, result: str) -> dict:
-        try:
-            # First try direct JSON parsing
-            return json.loads(result)
-        except json.JSONDecodeError:
-            # If that fails, try to extract JSON from markdown
-            if result.startswith("```json"):
-                logger.info("Found JSON in markdown")
-                # Remove markdown formatting
-                cleaned_result = result.replace("```json\n", "").replace("\n```", "")
-                try:
-                    return json.loads(cleaned_result)
-                except json.JSONDecodeError:
-                    pass
-
-            logger.info("Trying regex to extract JSON")
-            # Last resort: try to extract using regex
-            import re
-
-            score_match = re.search(r'score"?\s*:\s*(\d+\.?\d*)', result)
-            summary_match = re.search(r'summary"?\s*:\s*"([^"]+)"', result)
-            reason_match = re.search(r'reason"?\s*:\s*"([^"]+)"', result)
-
-            return {
-                "score": float(score_match.group(1)) if score_match is not None else 0,
-                "summary": (
-                    summary_match.group(1)
-                    if summary_match is not None
-                    else "No summary available"
-                ),
-                "reason": (
-                    reason_match.group(1)
-                    if reason_match is not None
-                    else "No reason available"
-                ),
-            }

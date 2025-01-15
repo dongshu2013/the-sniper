@@ -1,0 +1,34 @@
+import json
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+
+def parse_ai_response(response: str, fields: list[str] = None) -> dict:
+    try:
+        # First try direct JSON parsing
+        return json.loads(response)
+    except json.JSONDecodeError:
+        # If that fails, try to extract JSON from markdown
+        if response.startswith("```json"):
+            logger.info("Found JSON in markdown")
+            # Remove markdown formatting
+            cleaned_result = response.replace("```json\n", "").replace("\n```", "")
+            try:
+                return json.loads(cleaned_result)
+            except json.JSONDecodeError:
+                pass
+
+        logger.info("Trying regex to extract JSON")
+        # Last resort: try to extract using regex
+
+        result = {}
+        for field in fields or []:
+            match = re.search(rf'{field}"?\s*:\s*"([^"]+)"', response)
+            if match and match.group(1):
+                result[field] = match.group(1)
+            else:
+                result[field] = None
+
+        return result

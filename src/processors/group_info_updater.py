@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from typing import Optional, Tuple
@@ -7,7 +8,8 @@ from redis.asyncio import Redis
 from telethon import TelegramClient
 
 from src.common.agent_client import AgentClient
-from src.common.config import chat_entity_key
+from src.common.config import chat_entity_key, chat_quality_score_key
+from src.common.utils import parse_ai_response
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -37,6 +39,9 @@ and recent messages, extract the entity information.
 Context:
 {context}
 
+Previous Extracted Entity:
+{existing_entity}
+
 Output the entity information in JSON format with following fields:
 1. type: if the chat is about a specific memecoin, set to "memecoin", otherwise set to "other"
 2. name: if the chat is about a specific memecoin, set it to the ticker of the memecoin, otherwise set it to None
@@ -44,6 +49,11 @@ Output the entity information in JSON format with following fields:
 4. address: if the chat is about a specific memecoin, set it to the address of the memecoin, otherwise set it to None
 5. website: get the official website url of the group if there is any, otherwise set it to None
 6. twitter: get the twitter username of the group if there is any, otherwise set it to None
+
+Remember:
+If the previous extracted entity is not None, you can use it as a reference to extract the entity information. You should
+merge the new extracted entity with the previous extracted entity if it makes sense to you to get more comprehensive
+information.
 """
 
 QUALITY_EVALUATION_PROMPT = """
@@ -66,11 +76,12 @@ Scoring guidelines:
 """
 # format: on
 
+
 class GroupInfoUpdater(ProcessorBase):
     def __init__(
         self, client: TelegramClient, redis_client: Redis, pg_conn: Connection
     ):
-        super().__init__(interval=300)
+        super().__init__(interval=24 * 3600 * 3600)
         self.client = client
         self.redis_client = redis_client
         self.pg_conn = pg_conn
@@ -97,29 +108,28 @@ class GroupInfoUpdater(ProcessorBase):
             updates.append(metadata)
 
             # 2. Extract and update entity information
+            logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
             entity_json = await self.redis_client.get(chat_entity_key(chat_id))
-            if not entity_json:  # Not classified yet
-                logger.info(f"Classifying group {chat_id}: {dialog.name}")
-                context = await self._gather_context(dialog)
-                if context:
-                    entity = await self._extract_entity(context)
-                    if entity:
-                        logger.info(f"Update {chat_id}: {entity}")
-                        await self._update_entity(chat_id, entity)
+            entity = json.loads(entity_json) if entity_json else None
+            if not self._is_valid_entity(entity):
+                await self._extract_and_update_entity(dialog, entity)
 
-            # 3. Evaluate chat quality and update tags
-            quality_info = await self._evaluate_chat_quality(chat_id)
-            if quality_info:
-                await self._update_chat_tags(chat_id, quality_info)
+            # 3. Evaluate chat quality
+            await self._evaluate_chat_quality(chat_id)
 
         # Batch update metadata
         if updates:
             await self._batch_update_metadata(updates)
 
+    async def _is_valid_entity(self, entity: dict) -> bool:
+        if entity.get("type") == "memecoin":
+            # if entity is memecoin, it must have name and twitter
+            return entity.get("name") and entity.get("twitter")
+        return False
+
     async def _gather_context(self, chat) -> Optional[str]:
         """Gather context from various sources in the chat."""
         context_parts = []
-        
         context_parts.append(f"Chat Title: {chat.title}")
         about = getattr(chat.entity, "about", None)
         if about:
@@ -144,20 +154,27 @@ class GroupInfoUpdater(ProcessorBase):
 
         return "\n".join(filter(None, context_parts))
 
-    async def _extract_entity(self, context: str) -> Optional[str]:
+    async def _extract_and_update_entity(
+        self, dialog: any, existing_entity: dict
+    ) -> Optional[dict]:
         """Extract entity information using AI."""
         try:
-            logger.info(f"Context: {context}")
+            context = await self._gather_context(dialog)
             response = await self.ai_agent.chat_completion(
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
-                        "content": ENTITY_EXTRACTOR_PROMPT.format(context=context),
+                        "content": ENTITY_EXTRACTOR_PROMPT.format(
+                            context=context, existing_entity=existing_entity
+                        ),
                     },
                 ]
             )
-            return response["choices"][0]["message"]["content"]
+            return parse_ai_response(
+                response["choices"][0]["message"]["content"],
+                ["type", "name", "chain", "address", "website", "twitter"],
+            )
         except Exception as e:
             logger.error(f"Failed to extract entity: {e}")
             return None
@@ -168,24 +185,26 @@ class GroupInfoUpdater(ProcessorBase):
             # Get recent messages count and timestamps
             recent_messages = await self.pg_conn.fetch(
                 """
-                SELECT message_timestamp, message_text, sender_id 
-                FROM chat_messages 
-                WHERE chat_id = $1 
+                SELECT message_timestamp, message_text, sender_id
+                FROM chat_messages
+                WHERE chat_id = $1
                 AND message_timestamp > $2
                 ORDER BY message_timestamp DESC
                 """,
                 chat_id,
-                int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600
+                int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600,
             )
 
             if len(recent_messages) < MIN_MESSAGES_THRESHOLD:
                 return 0.0, "inactive"
 
             # Prepare messages for quality analysis
-            messages_text = "\n".join([
-                f"[{msg['message_timestamp']}] {msg['sender_id']}: {msg['message_text']}"
-                for msg in recent_messages
-            ])
+            messages_text = "\n".join(
+                [
+                    f"[{msg['message_timestamp']}] {msg['sender_id']}: {msg['message_text']}"
+                    for msg in recent_messages
+                ]
+            )
 
             # Use AI to evaluate quality
             response = await self.ai_agent.chat_completion(
@@ -194,33 +213,18 @@ class GroupInfoUpdater(ProcessorBase):
                     {"role": "user", "content": f"Messages:\n{messages_text}"},
                 ]
             )
-            
-            result = response["choices"][0]["message"]["content"]
+
+            result = parse_ai_response(
+                response["choices"][0]["message"]["content"], ["score", "reason"]
+            )
             quality_score = float(result.get("score", 0))
-            quality_tag = "low_quality" if quality_score < LOW_QUALITY_THRESHOLD else "active"
-            
-            return quality_score, quality_tag
+            await self.redis_client.lpush(
+                chat_quality_score_key(chat_id), quality_score
+            )
 
         except Exception as e:
             logger.error(f"Failed to evaluate chat quality: {e}")
             return None
-
-    async def _update_chat_tags(self, chat_id: str, quality_info: Tuple[float, str]):
-        """Update chat tags based on quality evaluation."""
-        quality_score, quality_tag = quality_info
-        try:
-            await self.pg_conn.execute(
-                """
-                UPDATE chat_metadata 
-                SET tag = $2, 
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE chat_id = $1
-                """,
-                chat_id,
-                quality_tag
-            )
-        except Exception as e:
-            logger.error(f"Failed to update chat tags: {e}")
 
     async def _batch_update_metadata(self, updates):
         """Batch update chat metadata."""
@@ -237,24 +241,7 @@ class GroupInfoUpdater(ProcessorBase):
                     participants_count = EXCLUDED.participants_count,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                updates
+                updates,
             )
         except Exception as e:
             logger.error(f"Failed to batch update metadata: {e}")
-
-    async def _update_entity(self, chat_id: str, entity_json: str):
-        """Update entity information in database and Redis."""
-        try:
-            await self.pg_conn.execute(
-                """
-                UPDATE chat_metadata 
-                SET entity = $2::jsonb,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE chat_id = $1
-                """,
-                chat_id,
-                entity_json
-            )
-            await self.redis_client.set(chat_entity_key(chat_id), entity_json)
-        except Exception as e:
-            logger.error(f"Failed to update entity: {e}")

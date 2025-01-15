@@ -43,3 +43,7 @@ def chat_watched_by_key(chat_id: str):
 
 def chat_entity_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:entity"
+
+
+def chat_quality_score_key(chat_id: str):
+    return f"{SERVICE_PREFIX}:chat:{chat_id}:quality_score"
