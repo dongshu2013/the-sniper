@@ -65,21 +65,17 @@ class ChatScoreSummarizer(ProcessorBase):
         self.pg_conn = pg_conn
         self.last_processed_time = 0
 
-    async def start_processing(self):
-        logger.info(f"Last processed time: {self.last_processed_time}")
-
     async def _get_last_message_timestamp(self) -> int:
         result = await self.pg_conn.fetchval(
             "SELECT MAX(last_message_timestamp) FROM chat_score_summaries"
         )
-        if result is None:
-            return int(time.time()) - self.interval
-        return int(result)
+        return max(result or 0, int(time.time()) - self.interval)
 
-    async def evaluate_all(self) -> None:
+    async def start_processing(self):
         """Evaluate all chat groups that have messages."""
         if self.last_processed_time == 0:
             self.last_processed_time = await self._get_last_message_timestamp()
+        logger.info(f"Last processed time: {self.last_processed_time}")
 
         # Get all unique chat IDs
         current_time = int(time.time())
@@ -95,7 +91,7 @@ class ChatScoreSummarizer(ProcessorBase):
             logger.info("No chat groups to process")
             return
 
-        # Process each chat group
+        logger.info(f"Found {len(chat_ids)} chat groups to process")
         for record in chat_ids:
             try:
                 logger.info(f"Evaluating chat {record['chat_id']} at {current_time}")
