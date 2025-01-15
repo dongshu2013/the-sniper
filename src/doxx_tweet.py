@@ -22,6 +22,17 @@ from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL, REDIS_URL
 from src.common.types import MemeCoinEntityMetadata
 from src.processors.score_summarizer import MIN_SUMMARY_INTERVAL
+from src.prompts.doxx_tweet_prompts import (
+    SYSTEM_PROMPT,
+    LEADERBOARD_PROMPT,
+    MIDDAY_PROMPT,
+    SENTIMENT_PROMPT,
+    DEBATE_PROMPT,
+    EVENING_LEADERBOARD_PROMPT,
+    MIDNIGHT_MEME_PROMPT,
+    MARKET_DISCOVERY_PROMPT,
+    MORNING_RECAP_PROMPT,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -127,7 +138,7 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
     logger.info(f"Sending to agent")
     response = await agent.chat_completion(
         [
-            {"role": "system", "content": SYSTME_PROMPT},
+            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_prompts},
         ]
     )
@@ -135,31 +146,614 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
 
 
 async def tweet_12pm(pg_conn: asyncpg.Connection):
-    pass
+    """Midday update with community highlights and comments"""
+    query = """
+    WITH ranked_messages AS (
+        SELECT 
+            m.chat_id,
+            m.message_text,
+            m.created_at,
+            cm.entity as metadata,
+            ROW_NUMBER() OVER (PARTITION BY m.chat_id ORDER BY m.engagement_score DESC) as rank
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        AND m.message_text IS NOT NULL
+        AND LENGTH(m.message_text) > 5
+    )
+    SELECT 
+        rm.message_text,
+        rm.metadata,
+        rm.created_at
+    FROM ranked_messages rm
+    WHERE rank = 1
+    ORDER BY rm.created_at DESC
+    LIMIT 3;
+    """
+    
+    # Get messages from last 6 hours
+    six_hours_ago = int(time.time() - 21600)  # 6 * 60 * 60
+    results = await pg_conn.fetch(query, six_hours_ago)
+    
+    if not results:
+        return "🦊 Midday check-in! It's a bit quiet in the meme coin world right now... Perfect time to catch up on research! Who's with me? 📚"
+
+    highlights = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        # Clean and truncate message
+        message = result["message_text"]
+        if len(message) > 30:
+            message = message[:27] + "..."
+        
+        highlights.append({
+            "symbol": metadata.symbol,
+            "message": message
+        })
+
+    user_prompt = MIDDAY_PROMPT.format(
+        highlights="\n".join(
+            f"${h['symbol']}: '{h['message']}'" 
+            for h in highlights
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_3pm(pg_conn: asyncpg.Connection):
-    pass
+    """Afternoon sentiment analysis and commentary"""
+    query = """
+    WITH sentiment_stats AS (
+        SELECT 
+            m.chat_id,
+            cm.entity as metadata,
+            COUNT(*) as total_messages,
+            COUNT(*) FILTER (WHERE m.sentiment_score > 0.6) as positive_count,
+            COUNT(*) FILTER (WHERE m.sentiment_score < 0.4) as negative_count,
+            AVG(m.sentiment_score) as avg_sentiment,
+            MAX(m.engagement_score) as max_engagement
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        GROUP BY m.chat_id, cm.entity
+    )
+    SELECT 
+        metadata,
+        total_messages,
+        ROUND((positive_count::float / NULLIF(total_messages, 0) * 100)::numeric, 1) as positive_percentage,
+        ROUND((negative_count::float / NULLIF(total_messages, 0) * 100)::numeric, 1) as negative_percentage,
+        avg_sentiment,
+        max_engagement
+    FROM sentiment_stats
+    WHERE total_messages > 10
+    ORDER BY max_engagement DESC
+    LIMIT 5;
+    """
+    
+    # Get data from last 4 hours
+    four_hours_ago = int(time.time() - 14400)  # 4 * 60 * 60
+    results = await pg_conn.fetch(query, four_hours_ago)
+    
+    if not results:
+        return "🌡️ Sentiment Check: The meme coin world is taking a breather! Sometimes silence speaks volumes. What are you watching right now? 👀"
+
+    sentiment_data = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        
+        # Calculate sentiment description
+        pos_pct = float(result["positive_percentage"] or 0)
+        neg_pct = float(result["negative_percentage"] or 0)
+        neutral_pct = 100 - (pos_pct + neg_pct)
+        
+        sentiment_desc = ""
+        if pos_pct > 70:
+            sentiment_desc = "extremely bullish"
+        elif pos_pct > 50:
+            sentiment_desc = "mostly positive"
+        elif neg_pct > 70:
+            sentiment_desc = "highly skeptical"
+        elif neg_pct > 50:
+            sentiment_desc = "cautious"
+        else:
+            sentiment_desc = "mixed feelings"
+        
+        sentiment_data.append({
+            "symbol": metadata.symbol,
+            "sentiment_desc": sentiment_desc,
+            "positive": pos_pct,
+            "negative": neg_pct,
+            "neutral": neutral_pct,
+            "message_count": result["total_messages"],
+            "avg_sentiment": float(result["avg_sentiment"] or 0)
+        })
+
+    user_prompt = SENTIMENT_PROMPT.format(
+        sentiment_data="\n".join(
+            f"${s['symbol']}: {s['sentiment_desc']} "
+            f"({s['positive']:.0f}% 📈, {s['negative']:.0f}% 📉, {s['neutral']:.0f}% 😐) "
+            f"- {s['message_count']} messages"
+            for s in sentiment_data
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_6pm(pg_conn: asyncpg.Connection):
-    pass
+    """Evening community debate highlights and personal opinion"""
+    query = """
+    WITH debate_messages AS (
+        SELECT 
+            m.chat_id,
+            m.message_text,
+            m.sentiment_score,
+            m.engagement_score,
+            m.created_at,
+            cm.entity as metadata,
+            COUNT(*) OVER (PARTITION BY m.chat_id) as chat_message_count
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        AND m.message_text IS NOT NULL
+        AND LENGTH(m.message_text) > 10
+    )
+    SELECT 
+        chat_id,
+        metadata,
+        ARRAY_AGG(
+            json_build_object(
+                'text', message_text,
+                'sentiment', sentiment_score,
+                'engagement', engagement_score
+            )
+            ORDER BY engagement_score DESC
+        ) as messages
+    FROM debate_messages
+    WHERE chat_message_count >= 10
+    GROUP BY chat_id, metadata
+    ORDER BY MAX(engagement_score) DESC
+    LIMIT 3;
+    """
+    
+    # Get messages from last 3 hours
+    three_hours_ago = int(time.time() - 10800)  # 3 * 60 * 60
+    results = await pg_conn.fetch(query, three_hours_ago)
+    
+    if not results:
+        return "🔥 Evening check! The debate rooms are cooling down... Perfect time to research and plan your next moves! What projects are you analyzing? 🤔"
+
+    debates = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        messages = result["messages"]
+        
+        # Split messages into bullish and bearish
+        bullish_msgs = []
+        bearish_msgs = []
+        
+        for msg in messages:
+            sentiment = float(msg["sentiment"])
+            text = msg["text"]
+            # Clean and truncate message
+            if len(text) > 40:
+                text = text[:37] + "..."
+            
+            if sentiment > 0.6:
+                bullish_msgs.append(text)
+            elif sentiment < 0.4:
+                bearish_msgs.append(text)
+        
+        # Get the most engaging messages from each side
+        bull_quote = bullish_msgs[0] if bullish_msgs else "Staying optimistic!"
+        bear_quote = bearish_msgs[0] if bearish_msgs else "Being cautious..."
+        
+        debates.append({
+            "symbol": metadata.symbol,
+            "bull_quote": bull_quote,
+            "bear_quote": bear_quote,
+            "intensity": len(messages)
+        })
+
+    user_prompt = DEBATE_PROMPT.format(
+        debates="\n".join(
+            f"${d['symbol']} Debate:\n"
+            f"Bulls: '{d['bull_quote']}'\n"
+            f"Bears: '{d['bear_quote']}'\n"
+            f"Heat level: {'🔥' * min(5, d['intensity'] // 10)}"
+            for d in debates
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_9pm(pg_conn: asyncpg.Connection):
-    pass
+    """Evening leaderboard update with fun interaction"""
+    query = """
+    WITH latest_activity AS (
+        SELECT 
+            m.chat_id,
+            cm.entity as metadata,
+            COUNT(*) as message_count,
+            COUNT(DISTINCT m.user_id) as active_users,
+            AVG(m.sentiment_score) as avg_sentiment,
+            MAX(m.engagement_score) as max_engagement,
+            SUM(CASE WHEN m.sentiment_score > 0.6 THEN 1 ELSE 0 END) as bullish_count
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        GROUP BY m.chat_id, cm.entity
+    )
+    SELECT 
+        metadata,
+        message_count,
+        active_users,
+        avg_sentiment,
+        max_engagement,
+        ROUND((bullish_count::float / message_count * 100)::numeric, 1) as bullish_percentage
+    FROM latest_activity
+    WHERE message_count >= 20
+    ORDER BY max_engagement DESC, active_users DESC
+    LIMIT 5;
+    """
+    
+    # Get data from last 6 hours
+    six_hours_ago = int(time.time() - 21600)  # 6 * 60 * 60
+    results = await pg_conn.fetch(query, six_hours_ago)
+    
+    if not results:
+        return "🌙 Night check! Market's taking a breather... Perfect time to do your research! What gems are you watching? 👀"
+
+    leaderboard = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        
+        # Determine activity description
+        activity_desc = ""
+        if result["message_count"] > 100 and result["bullish_percentage"] > 70:
+            activity_desc = "community is going wild"
+        elif result["active_users"] > 50:
+            activity_desc = "massive community engagement"
+        elif float(result["avg_sentiment"]) > 0.7:
+            activity_desc = "extremely bullish vibes"
+        elif result["bullish_percentage"] > 60:
+            activity_desc = "steady positive momentum"
+        else:
+            activity_desc = "active discussions ongoing"
+        
+        leaderboard.append({
+            "symbol": metadata.symbol,
+            "description": activity_desc,
+            "active_users": result["active_users"],
+            "message_count": result["message_count"],
+            "bullish_pct": float(result["bullish_percentage"]),
+            "engagement": float(result["max_engagement"])
+        })
+
+    user_prompt = EVENING_LEADERBOARD_PROMPT.format(
+        leaderboard="\n".join(
+            f"${l['symbol']}: {l['description']} "
+            f"({l['active_users']} active users, {l['bullish_pct']:.0f}% bullish)"
+            for l in leaderboard
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_12am(pg_conn: asyncpg.Connection):
-    pass
+    """Midnight meme post and self-talk"""
+    query = """
+    WITH price_changes AS (
+        SELECT 
+            cm.entity as metadata,
+            m.chat_id,
+            COUNT(*) as message_count,
+            COUNT(DISTINCT m.user_id) as unique_users,
+            AVG(CASE 
+                WHEN m.message_text ~* 'dump|dip|crash|down|red' THEN -1
+                WHEN m.message_text ~* 'pump|moon|up|green|ath' THEN 1
+                ELSE 0
+            END) as price_sentiment,
+            AVG(m.sentiment_score) as avg_sentiment
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        GROUP BY cm.entity, m.chat_id
+    )
+    SELECT 
+        metadata,
+        message_count,
+        unique_users,
+        price_sentiment,
+        avg_sentiment
+    FROM price_changes
+    WHERE message_count >= 30
+    ORDER BY ABS(price_sentiment) DESC, message_count DESC
+    LIMIT 3;
+    """
+    
+    # Get data from last 4 hours
+    four_hours_ago = int(time.time() - 14400)  # 4 * 60 * 60
+    results = await pg_conn.fetch(query, four_hours_ago)
+    
+    if not results:
+        return "🌙 Midnight meme check! Everyone's probably dreaming of green candles right now! 😴 What memes are living rent-free in your head? Share them below! 🎭"
+
+    meme_data = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        
+        # Determine market mood
+        price_sentiment = float(result["price_sentiment"] or 0)
+        avg_sentiment = float(result["avg_sentiment"] or 0.5)
+        
+        mood = ""
+        if price_sentiment < -0.3 and avg_sentiment < 0.4:
+            mood = "coping with dips"
+        elif price_sentiment < 0 and avg_sentiment > 0.6:
+            mood = "buying the dip"
+        elif price_sentiment > 0.3 and avg_sentiment > 0.6:
+            mood = "celebrating gains"
+        elif price_sentiment > 0 and avg_sentiment < 0.4:
+            mood = "cautiously optimistic"
+        else:
+            mood = "watching charts"
+        
+        meme_data.append({
+            "symbol": metadata.symbol,
+            "mood": mood,
+            "active_users": result["unique_users"],
+            "message_count": result["message_count"],
+            "sentiment": avg_sentiment
+        })
+
+    user_prompt = MIDNIGHT_MEME_PROMPT.format(
+        meme_data="\n".join(
+            f"${m['symbol']}: Community {m['mood']} "
+            f"({m['active_users']} traders {'😅' if m['sentiment'] < 0.5 else '🚀'})"
+            for m in meme_data
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_3am(pg_conn: asyncpg.Connection):
-    pass
+    """Late night market discovery and personal updates"""
+    query = """
+    WITH recent_activity AS (
+        SELECT 
+            m.chat_id,
+            cm.entity as metadata,
+            COUNT(*) as message_count,
+            COUNT(DISTINCT m.user_id) as unique_users,
+            MAX(m.engagement_score) as peak_engagement,
+            AVG(m.sentiment_score) as avg_sentiment,
+            ARRAY_AGG(
+                CASE WHEN m.message_text ~* 'buy|bought|whale|pump|volume' 
+                THEN m.message_text ELSE NULL END
+            ) FILTER (WHERE m.sentiment_score > 0.6) as bullish_messages,
+            SUM(CASE 
+                WHEN m.message_text ~* 'buy|bought|whale|([0-9]+k)|([0-9]+K)' 
+                AND m.sentiment_score > 0.6 
+                THEN 1 ELSE 0 
+            END) as whale_mentions
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        GROUP BY m.chat_id, cm.entity
+    )
+    SELECT 
+        metadata,
+        message_count,
+        unique_users,
+        peak_engagement,
+        avg_sentiment,
+        bullish_messages,
+        whale_mentions
+    FROM recent_activity
+    WHERE message_count >= 15
+    AND whale_mentions > 0
+    ORDER BY peak_engagement DESC, whale_mentions DESC
+    LIMIT 3;
+    """
+    
+    # Get data from last 2 hours
+    two_hours_ago = int(time.time() - 7200)  # 2 * 60 * 60
+    results = await pg_conn.fetch(query, two_hours_ago)
+    
+    if not results:
+        return "👀 3AM check! Even whales need sleep... but who else is watching charts with me? ☕️ Drop your late night analysis below! 📊"
+
+    discoveries = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        
+        # Filter and clean bullish messages
+        whale_messages = [
+            msg for msg in result["bullish_messages"] 
+            if msg and len(msg) > 10
+        ]
+        
+        # Determine market activity level
+        activity_desc = ""
+        if result["whale_mentions"] > 5 and float(result["avg_sentiment"]) > 0.7:
+            activity_desc = "massive whale movements"
+        elif result["unique_users"] > 30:
+            activity_desc = "unexpected late night action"
+        elif float(result["peak_engagement"]) > 0.8:
+            activity_desc = "potential breakout forming"
+        else:
+            activity_desc = "interesting whale watching"
+        
+        # Get a representative whale message if available
+        whale_quote = ""
+        if whale_messages:
+            whale_quote = whale_messages[0]
+            if len(whale_quote) > 40:
+                whale_quote = whale_quote[:37] + "..."
+        
+        discoveries.append({
+            "symbol": metadata.symbol,
+            "activity": activity_desc,
+            "whale_quote": whale_quote,
+            "active_users": result["unique_users"],
+            "sentiment": float(result["avg_sentiment"]),
+            "whale_mentions": result["whale_mentions"]
+        })
+
+    user_prompt = MARKET_DISCOVERY_PROMPT.format(
+        discoveries="\n".join(
+            f"${d['symbol']}: {d['activity']} "
+            f"({d['whale_mentions']} whale signals 🐳) "
+            + (f"\nQuote: '{d['whale_quote']}'" if d['whale_quote'] else "")
+            for d in discoveries
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 async def tweet_6am(pg_conn: asyncpg.Connection):
-    pass
+    """Morning discussion recap and motivational message"""
+    query = """
+    WITH night_discussions AS (
+        SELECT 
+            m.chat_id,
+            cm.entity as metadata,
+            COUNT(*) as message_count,
+            COUNT(DISTINCT m.user_id) as unique_users,
+            AVG(m.sentiment_score) as avg_sentiment,
+            MAX(m.engagement_score) as peak_engagement,
+            ARRAY_AGG(
+                CASE 
+                    WHEN m.engagement_score > 0.7 
+                    THEN json_build_object(
+                        'text', m.message_text,
+                        'sentiment', m.sentiment_score,
+                        'engagement', m.engagement_score
+                    )
+                    ELSE NULL 
+                END
+            ) FILTER (WHERE m.engagement_score > 0.7) as top_messages
+        FROM messages m
+        JOIN chat_metadata cm ON m.chat_id = cm.chat_id
+        WHERE cm.entity->>'type' = 'meme_coin'
+        AND m.created_at > $1
+        AND m.created_at < $2
+        GROUP BY m.chat_id, cm.entity
+    )
+    SELECT 
+        metadata,
+        message_count,
+        unique_users,
+        avg_sentiment,
+        peak_engagement,
+        top_messages
+    FROM night_discussions
+    WHERE message_count >= 25
+    ORDER BY peak_engagement DESC, message_count DESC
+    LIMIT 3;
+    """
+    
+    # Get data from 6 hours ago to 1 hour ago
+    six_hours_ago = int(time.time() - 21600)  # 6 * 60 * 60
+    one_hour_ago = int(time.time() - 3600)    # 1 * 60 * 60
+    results = await pg_conn.fetch(query, six_hours_ago, one_hour_ago)
+    
+    if not results:
+        return "🌅 Good morning, crypto fam! Fresh day, fresh opportunities! Remember: in meme coins, as in life, balance your passion with wisdom! What's your strategy for today? 💫"
+
+    discussions = []
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        
+        # Process top messages
+        highlights = []
+        if result["top_messages"]:
+            for msg in result["top_messages"]:
+                if msg and len(msg["text"]) > 10:
+                    # Clean and truncate message
+                    text = msg["text"]
+                    if len(text) > 40:
+                        text = text[:37] + "..."
+                    highlights.append({
+                        "text": text,
+                        "sentiment": float(msg["sentiment"]),
+                        "engagement": float(msg["engagement"])
+                    })
+        
+        # Determine night activity description
+        activity_desc = ""
+        avg_sentiment = float(result["avg_sentiment"] or 0.5)
+        if result["message_count"] > 100 and avg_sentiment > 0.7:
+            activity_desc = "explosive night discussions"
+        elif result["unique_users"] > 50:
+            activity_desc = "highly active community"
+        elif float(result["peak_engagement"]) > 0.8:
+            activity_desc = "intense debate session"
+        else:
+            activity_desc = "steady night conversations"
+        
+        discussions.append({
+            "symbol": metadata.symbol,
+            "activity": activity_desc,
+            "highlights": highlights[:2],  # Take top 2 highlights
+            "active_users": result["unique_users"],
+            "sentiment": avg_sentiment,
+            "message_count": result["message_count"]
+        })
+
+    user_prompt = MORNING_RECAP_PROMPT.format(
+        discussions="\n".join(
+            f"${d['symbol']}: {d['activity']} "
+            f"({d['active_users']} night owls, {d['message_count']} messages)"
+            + (f"\nHighlights: " + " | ".join(
+                f"'{h['text']}' {'🚀' if h['sentiment'] > 0.6 else '🤔'}"
+                for h in d['highlights']
+            ) if d['highlights'] else "")
+            for d in discussions
+        )
+    )
+    
+    response = await agent.chat_completion([
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ])
+    return response["choices"][0]["message"]["content"]
 
 
 def tweet(tweets: list[str]):
@@ -243,70 +837,6 @@ async def run(dry_run: bool = False, target_hour: int = None):
                     logger.error(f"Error posting tweet: {e}")
     finally:
         await pg_conn.close()
-
-
-# flake8: noqa
-# format off
-LEADERBOARD_PROMPT = """
-Given the following leaderboard, format it into a tweet.
-
-The leaderboard is:
-{leaderboard_text}
-
-Tweet Example:
-🎖️ Morning Meme Coin Leaderboard! 🚀
-  1️⃣ $TokenX - Explosive mentions and wild hype!
-  2️⃣ $TokenY - Cooling down, but loyal supporters are holding on.
-  3️⃣ $TokenZ - Steady rise, slow and strong.
-
-It feels like watching a drama unfold! What is your bet today? 💬”*
-
-Remember:
-1. Order the leaderboard by score, the one with highest score is the best and should be the first and highlighted.
-2. For each token, link the twitter username right after the symbol so the project owner can be reached.
-3. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
-4. Share your opinions, do not be afraid of being aggressive and bold
-5. Use emojis and add a short comment to the end of the tweet and use your humor to make it more engaging and interesting
-6. Add a note to tell the reader that the evaluation is based on the telegram group activity and not the token price
-
-Output:
-Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
-new lines. Add a thread marker to the end of each tweet if there are more than one tweet.
-For example, if there are 3 tweets, the output should be:
-tweet_1 (1/3)
-tweet_2 (2/3)
-tweet_3 (3/3)
-
-You don't need to add the thread marker if there is only one tweet.
-"""
-
-
-SYSTME_PROMPT = """
-#### Personality:
-Doxx is the perfect mix of cute and sharp. With her bright eyes, playful laugh, and love for sharing memes,
-she is approachable and friendly. But don it let her sweet looks fool you—her memecoin analysis is razor-sharp.
-She is cheerful but bold, switching effortlessly between playful jokes and hard-hitting truths.
-
-Key Traits:
-- Expressive & Relatable: Balances teasing with genuine support, loved by newcomers and veterans alike.
-- Truth Seeker: Committed to honesty and transparency, never sugarcoats shady projects.
-- Community-Driven: Loves creating educational and fun content, encouraging group discussions.
-- Witty & Bold: Known for her iconic catchphrases and meme-worthy commentary.
-
----
-
-#### Background:
-Doxx started as a small-time memecoin explorer, learning the ropes through trial and error. After getting burned
-in the early days, she came back stronger, determined to help others avoid the same mistakes. Her sharp insights
-and fearless honesty earned her a spot as a trusted figure in the Web3 community.
-
-Joining DOXX was a perfect fit—Doxx embodies the mission of uncovering the truth. Her witty, no-nonsense approach
-makes her a standout voice in the chaos of memecoins, helping her community stay informed and safe.
-
-Catchphrase:
-If it looks like a shitcoin, smells like a shitcoin, and its price moves like a shitcoin—then it is probably a shitcoin.
-"""
-# format on
 
 
 def main():
