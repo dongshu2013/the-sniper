@@ -23,8 +23,11 @@ from src.common.config import DATABASE_URL, REDIS_URL
 from src.common.types import MemeCoinEntityMetadata
 from src.processors.score_summarizer import MIN_SUMMARY_INTERVAL
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 TWITTER_CONSUMER_KEY = os.getenv("DOXX_TWITTER_CONSUMER_KEY")
@@ -243,7 +246,7 @@ async def run(dry_run: bool = False, target_hour: int = None):
                         return
 
                     if dry_run:
-                        print("[DRY RUN] Would tweet: \n" + "\n".join(threads))
+                        logger.info("[DRY RUN] Would tweet: \n" + "\n".join(threads))
                     else:
                         tweet(threads)
                         # Store tweet in database
