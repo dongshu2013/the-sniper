@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import time
@@ -6,10 +5,8 @@ from asyncio.log import logger
 from datetime import datetime
 
 import asyncpg
-from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
-from src.common.config import DATABASE_URL, REDIS_URL
 from src.processors.processor import ProcessorBase
 
 # flake8: noqa

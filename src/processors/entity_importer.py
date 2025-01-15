@@ -13,6 +13,7 @@ from src.common.types import (
     MemeCoinEntity,
     MemeCoinEntityMetadata,
 )
+from src.processors.processor import ProcessorBase
 
 # flake8: noqa: E501
 logger = logging.getLogger(__name__)
@@ -110,21 +111,11 @@ async def import_gmgn_24h_ranked_groups():
         logger.error(f"Error reading local file: {e}", exc_info=True)
 
 
-class EntityImporter:
+class EntityImporter(ProcessorBase):
     def __init__(self, pg_conn: asyncpg.Connection, redis_client: Redis):
-        self.running = False
+        super().__init__(interval=300)
         self.pg_conn = pg_conn
         self.redis_client = redis_client
-        self.interval = 300
-
-    async def start_processing(self):
-        self.running = True
-        while self.running:
-            await self.process()
-            await asyncio.sleep(self.interval)
-
-    async def stop_processing(self):
-        self.running = False
 
     async def process(self):
         # Collect entities from the async generator
