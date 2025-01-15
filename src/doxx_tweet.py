@@ -59,7 +59,7 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
         SELECT DISTINCT ON (chat_id)
             chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
         FROM chat_score_summaries
-        WHERE last_message_timestamp > $1
+        WHERE last_message_timestamp > (EXTRACT(EPOCH FROM NOW() - INTERVAL '24 hours')::bigint)
         ORDER BY chat_id, last_message_timestamp DESC
     )
     SELECT
