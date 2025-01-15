@@ -20,6 +20,7 @@ from redis.asyncio import Redis
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL, REDIS_URL
+from src.common.types import MemeCoinEntityMetadata
 from src.processors.score_summarizer import MIN_SUMMARY_INTERVAL
 
 logger = logging.getLogger(__name__)
@@ -80,27 +81,46 @@ WITH latest_summaries AS (
     FROM chat_score_summaries
     WHERE last_message_timestamp > $1
     ORDER BY chat_id, last_message_timestamp DESC
+),
+joined_data AS (
+    SELECT
+        ls.chat_id,
+        ls.score,
+        ls.summary,
+        ls.messages_count,
+        ls.unique_users_count,
+        ls.last_message_timestamp,
+        e.twitter_username,
+        e.reference,
+        e.metadata
+    FROM latest_summaries ls
+    INNER JOIN entities e ON ls.chat_id = e.reference
+    WHERE e.entity_type = 'meme_coin'
 )
-SELECT * FROM latest_summaries
+SELECT * FROM joined_data
 ORDER BY score DESC
 LIMIT 10
 """
     logger.info(f"Getting chat scores and summary")
     last_message_ts = int(time.time() - MIN_SUMMARY_INTERVAL)
     results = await pg_conn.fetch(query, last_message_ts)
+    logger.info(f"Found {len(results)} meme coins chat groups")
+
     chat_scores = {}
     final_results = {}
     for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate(result["metadata"])
         chat_id = result["chat_id"]
         score = result["score"]
         messages_count = result["messages_count"]
         unique_users_count = result["unique_users_count"]
-        chat_scores[chat_id] = {
+        chat_scores[metadata.symbol] = {
             "score": score,
             "messages_count": messages_count,
             "unique_users_count": unique_users_count,
+            "twitter_username": result["twitter_username"],
         }
-        final_results[chat_id] = {"summary": result["summary"]}
+        final_results[metadata.symbol] = {"summary": result["summary"]}
 
     logger.info(f"Calculating final scores")
     final_scores = calculate_score(chat_scores)
@@ -109,10 +129,14 @@ LIMIT 10
 
     logger.info(f"Formatting leaderboard text")
     leaderboard_text = ""
-    for chat_id, result in final_results.items():
-        leaderboard_text += (
-            f"{chat_id} (Score: {result['final_score']:.1f}): {result['summary']}\n"
+    for symbol, result in final_results.items():
+        score = f"Score: {result['final_score']:.1f}"
+        twitter = (
+            f"twitter: @{result['twitter_username']}"
+            if result["twitter_username"]
+            else ""
         )
+        leaderboard_text += f"${symbol} ({score} {twitter}): {result['summary']}\n"
 
     logger.info(f"Formatting user prompt")
     user_prompts = LEADERBOARD_PROMPT.format(leaderboard_text=leaderboard_text)

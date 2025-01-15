@@ -17,6 +17,6 @@ class AgentClient:
 
     async def chat_completion(self, messages):
         response = await self.client.chat.completions.create(
-            model=self.model, messages=messages
+            model=self.model, messages=messages, temperature=0.7
         )
         return response.model_dump()
