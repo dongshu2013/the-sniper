@@ -55,27 +55,26 @@ def normalize_score(value, max_value, min_value=0):
 
 async def tweet_9am(pg_conn: asyncpg.Connection):
     query = """
-WITH latest_summaries AS (
-    SELECT DISTINCT ON (chat_id)
-        chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
-    FROM chat_score_summaries
-    WHERE last_message_timestamp > 1736895068
-    ORDER BY chat_id, last_message_timestamp DESC
-)
-SELECT
-    ls.score,
-    ls.summary,
-    ls.messages_count,
-    ls.unique_users_count,
-    e.reference,
-    e.twitter_username,
-    e.metadata
-FROM latest_summaries ls
-JOIN chat_metadata cm ON ls.chat_id = cm.chat_id
-JOIN entities e ON cm.entity_id = e.id
-WHERE e.entity_type = 'meme_coin'
-ORDER BY ls.score DESC;
-"""
+    WITH latest_summaries AS (
+        SELECT DISTINCT ON (chat_id)
+            chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
+        FROM chat_score_summaries
+        WHERE last_message_timestamp > $1
+        ORDER BY chat_id, last_message_timestamp DESC
+    )
+    SELECT
+        ls.score,
+        ls.summary,
+        ls.messages_count,
+        ls.unique_users_count,
+        cm.entity->>'reference' as reference,
+        cm.entity->>'twitter_username' as twitter_username,
+        cm.entity as metadata
+    FROM latest_summaries ls
+    JOIN chat_metadata cm ON ls.chat_id = cm.chat_id
+    WHERE cm.entity->>'type' = 'meme_coin'
+    ORDER BY ls.score DESC;
+    """
     logger.info(f"Getting chat scores and summary")
     last_message_ts = int(time.time() - MIN_SUMMARY_INTERVAL)
     logger.info(f"Last message timestamp: {last_message_ts}")
