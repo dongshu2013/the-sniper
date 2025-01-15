@@ -20,7 +20,6 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
 
 SERVICE_PREFIX = "the_sinper_bot"
-PENDING_TG_GROUPS_KEY = f"{SERVICE_PREFIX}:pending_tg_groups"
 MESSAGE_QUEUE_KEY = f"{SERVICE_PREFIX}:message_queue"
 
 
@@ -33,17 +32,5 @@ def message_seen_key(chat_id: str, message_id: str):
     return f"{SERVICE_PREFIX}:message:{chat_id}:{message_id}:seen"
 
 
-def tg_link_status_key(tg_link: str):
-    return f"{SERVICE_PREFIX}:tg_link:{tg_link}:status"
-
-
 def chat_watched_by_key(chat_id: str):
     return f"{SERVICE_PREFIX}:chat:{chat_id}:watched_by"
-
-
-def chat_entity_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:entity"
-
-
-def chat_quality_score_key(chat_id: str):
-    return f"{SERVICE_PREFIX}:chat:{chat_id}:quality_score"

@@ -3,15 +3,9 @@ import json
 import logging
 
 import aiohttp
-from redis.asyncio import Redis
+import asyncpg
 
-from src.common.config import PENDING_TG_GROUPS_KEY, REDIS_URL
-from src.common.types import (
-    EntityGroupItem,
-    EntityType,
-    MemeCoinEntity,
-    MemeCoinEntityMetadata,
-)
+from src.common.types import MemeCoinEntity, MemeCoinEntityMetadata, TgLinkStatus
 from src.processors.processor import ProcessorBase
 
 # flake8: noqa: E501
@@ -110,10 +104,10 @@ async def import_gmgn_24h_ranked_groups():
         logger.error(f"Error reading local file: {e}", exc_info=True)
 
 
-class EntityImporter(ProcessorBase):
-    def __init__(self, redis_client: Redis):
-        super().__init__(interval=600)
-        self.redis_client = redis_client
+class TgLinkImporter(ProcessorBase):
+    def __init__(self, pg_conn: asyncpg.Connection):
+        super().__init__(interval=300)
+        self.pg_conn = pg_conn
 
     async def process(self):
         # Collect entities from the async generator
@@ -121,31 +115,18 @@ class EntityImporter(ProcessorBase):
         async for entity in get_gmgn_24h_ranked_groups():
             entities.append(entity)
 
-        entities_data = [
-            (
-                EntityType.MEME_COIN.value,
-                entity.reference,
-                json.dumps(entity.metadata.model_dump()),
-                entity.website,
-                entity.twitter_username,
-                entity.logo,
-                entity.telegram,
-                entity.source_link,
-            )
-            for entity in entities
-        ]
+        tg_links = [entity.telegram for entity in entities if entity.telegram]
 
-        logger.info(f"Importing {len(entities_data)} entities")
-        entity_ids = [record["id"] for record in entity_ids]
-        logger.info(f"Imported {len(entity_ids)} entities")
-        group_info = [
-            EntityGroupItem(
-                entity_id=entity_id,
-                telegram_link=entity_data[6],
-            ).model_dump_json()
-            for entity_id, entity_data in zip(entity_ids, entities_data)
-            if entity_data[6]
-        ]
-        logger.info(f"Importing {len(group_info)} groups")
-        if group_info:
-            await self.redis_client.lpush(PENDING_TG_GROUPS_KEY, *group_info)
+        logger.info(f"Importing {len(tg_links)} telegram links")
+        await self.pg_conn.executemany(
+            """
+            INSERT INTO tg_link_status (tg_link, status)
+            VALUES ($1, $2)
+            ON CONFLICT DO NOTHING
+            """,
+            [
+                {"tg_link": link, "status": TgLinkStatus.PENDING.value}
+                for link in tg_links
+            ],
+        )
+        logger.info(f"Imported {len(tg_links)} telegram links")

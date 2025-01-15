@@ -16,9 +16,7 @@ from src.common.config import (
 from src.common.types import ChatMessage
 from src.processors.group_info_updater import GroupInfoUpdater
 from src.processors.msg_queue_processor import MessageQueueProcessor
-from src.processors.score_summarizer import ChatScoreSummarizer
-from src.processors.tg_link_importer import TgLinkImporter
-from src.processors.tg_link_processor import TgLinkProcessor
+from src.processors.tg_link_processor import GroupQueueProcessor
 
 # Create logger instance
 logging.basicConfig(
@@ -38,20 +36,16 @@ async def run():
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
     await register_handlers(listner.client)
-    tg_link_importer = TgLinkImporter(pg_conn)
-    tg_link_processor = TgLinkProcessor(listner.client, redis_client, pg_conn)
+    grp_queue_processor = GroupQueueProcessor(listner.client, redis_client, pg_conn)
     grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
-    summarizer = ChatScoreSummarizer(pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
-            tg_link_importer.start_processing(),
-            tg_link_processor.start_processing(),
+            grp_queue_processor.start_processing(),
             grp_info_updater.start_processing(),
             msg_queue_processor.start_processing(),
-            summarizer.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")

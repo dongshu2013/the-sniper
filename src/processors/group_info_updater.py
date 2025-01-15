@@ -8,7 +8,7 @@ from redis.asyncio import Redis
 from telethon import TelegramClient
 
 from src.common.agent_client import AgentClient
-from src.common.config import chat_entity_key, chat_quality_score_key
+from src.common.config import chat_entity_key
 from src.common.utils import parse_ai_response
 from src.processors.processor import ProcessorBase
 
@@ -43,7 +43,7 @@ Previous Extracted Entity:
 {existing_entity}
 
 Output the entity information in JSON format with following fields:
-1. type: if the chat is about a specific memecoin, set to "memecoin", otherwise set to "other"
+1. type: if the chat is about a specific memecoin, set to "memecoin", if it's not about a memecoin, set to "other", if you are not sure, set to "unknown".
 2. name: if the chat is about a specific memecoin, set it to the ticker of the memecoin, otherwise set it to None
 3. chain: if the chat is about a specific memecoin, set it to the chain of the memecoin, otherwise set it to None
 4. address: if the chat is about a specific memecoin, set it to the address of the memecoin, otherwise set it to None
@@ -97,35 +97,40 @@ class GroupInfoUpdater(ProcessorBase):
             if chat_id.startswith("-100"):
                 chat_id = chat_id[4:]
 
-            # 1. Update basic metadata
-            metadata = (
-                chat_id,
-                dialog.name or None,
-                getattr(dialog.entity, "about", None),
-                getattr(dialog.entity, "username", None),
-                getattr(dialog.entity, "participants_count", 0),
-            )
-            updates.append(metadata)
-
             # 2. Extract and update entity information
             logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
             entity_json = await self.redis_client.get(chat_entity_key(chat_id))
             entity = json.loads(entity_json) if entity_json else None
             if not self._is_valid_entity(entity):
-                await self._extract_and_update_entity(dialog, entity)
+                new_entity = await self._extract_and_update_entity(dialog, entity)
+                entity = entity.update(new_entity or {}) if entity else new_entity
 
             # 3. Evaluate chat quality
-            await self._evaluate_chat_quality(chat_id)
+            quality_report = await self._evaluate_chat_quality(chat_id)
+
+            updates.append(
+                (
+                    chat_id,
+                    dialog.name or None,
+                    getattr(dialog.entity, "about", None),
+                    getattr(dialog.entity, "username", None),
+                    getattr(dialog.entity, "participants_count", 0),
+                    json.dumps(entity) if entity else None,
+                    json.dumps([quality_report]) if quality_report else None,
+                )
+            )
 
         # Batch update metadata
         if updates:
             await self._batch_update_metadata(updates)
 
     async def _is_valid_entity(self, entity: dict) -> bool:
+        if entity.get("type") == "unknown":
+            return False
         if entity.get("type") == "memecoin":
             # if entity is memecoin, it must have name and twitter
             return entity.get("name") and entity.get("twitter")
-        return False
+        return True
 
     async def _gather_context(self, chat) -> Optional[str]:
         """Gather context from various sources in the chat."""
@@ -214,14 +219,11 @@ class GroupInfoUpdater(ProcessorBase):
                 ]
             )
 
-            result = parse_ai_response(
+            report = parse_ai_response(
                 response["choices"][0]["message"]["content"], ["score", "reason"]
             )
-            quality_score = float(result.get("score", 0))
-            await self.redis_client.lpush(
-                chat_quality_score_key(chat_id), quality_score
-            )
-
+            report["processed_at"] = int(time.time())
+            return report
         except Exception as e:
             logger.error(f"Failed to evaluate chat quality: {e}")
             return None
@@ -232,14 +234,16 @@ class GroupInfoUpdater(ProcessorBase):
             await self.pg_conn.executemany(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, about, username, participants_count, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+                    chat_id, name, about, username, participants_count, entity, quality_reports, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     about = EXCLUDED.about,
                     username = EXCLUDED.username,
                     participants_count = EXCLUDED.participants_count,
-                    updated_at = CURRENT_TIMESTAMP
+                    updated_at = CURRENT_TIMESTAMP,
+                    entity = EXCLUDED.entity,
+                    quality_reports = chat_metadata.quality_reports || EXCLUDED.quality_reports
                 """,
                 updates,
             )

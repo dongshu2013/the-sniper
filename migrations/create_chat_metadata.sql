@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     about TEXT DEFAULT '',
     username VARCHAR(255) DEFAULT '',
     participants_count INTEGER DEFAULT 0,
-    is_blocked BOOLEAN DEFAULT FALSE,
+    entity JSONB DEFAULT NULL,
+    quality_reports JSONB DEFAULT '[]',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

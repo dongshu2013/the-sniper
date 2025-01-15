@@ -9,6 +9,18 @@ class EntityType(Enum):
     TWITTER_KOL = "twitter_kol"
 
 
+class TgLinkStatus(Enum):
+    PENDING = "pending"
+    PROCESSED = "processed"
+    ERROR = "error"
+    IGNORED = "ignored"
+
+
+class ChatStatus(Enum):
+    INACTIVE = "inactive"
+    LOW_QUALITY = "low_quality"
+
+
 class MemeCoinEntityMetadata(BaseModel):
     symbol: str
     launchpad: Optional[str | dict]
@@ -30,11 +42,6 @@ class ChatMetadata(BaseModel):
     about: Optional[str]
     participants_count: int
     processed_at: int
-
-
-class EntityGroupItem(BaseModel):
-    entity_id: int
-    telegram_link: str
 
 
 class ChatMessage(BaseModel):
