@@ -85,7 +85,7 @@ ORDER BY ls.score DESC;
     max_user_count = max(result["unique_users_count"] for result in results)
     max_msg_count = max(result["messages_count"] for result in results)
 
-    leaderboard_text = ""
+    leaderboard_items = []
     for result in results:
         metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
         # Normalize unique users (0-10)
@@ -97,14 +97,25 @@ ORDER BY ls.score DESC;
             + (normalized_users * 0.3)
             + (normalized_messages * 0.1)
         )
-        score = f"Score: {final_score:.1f}"
+        leaderboard_items.append(
+            {
+                "symbol": metadata.symbol,
+                "final_score": final_score,
+                "summary": result["summary"],
+                "twitter_username": result["twitter_username"],
+            }
+        )
+
+    # sort by final score
+    leaderboard_text = ""
+    leaderboard_items.sort(key=lambda x: x["final_score"], reverse=True)
+    for item in leaderboard_items:
+        score = f"Score: {item['final_score']:.1f}"
         twitter = (
-            f"twitter: @{result['twitter_username']}"
-            if result["twitter_username"]
-            else ""
+            f"twitter: @{item['twitter_username']}" if item["twitter_username"] else ""
         )
         leaderboard_text += (
-            f"${metadata['symbol']} ({score} {twitter}): {result['summary']}\n"
+            f"${item['symbol']} ({score} {twitter}): {item['summary']}\n"
         )
 
     user_prompts = LEADERBOARD_PROMPT.format(leaderboard_text=leaderboard_text)
@@ -252,6 +263,7 @@ Remember:
 2. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
 3. Use your humor and personality to make it more engaging and interesting
 4. Share your opinions, do not be afraid of being aggressive and bold
+5. Add a short comment to the end of the tweet to make it more engaging and interesting
 
 Output:
 Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
