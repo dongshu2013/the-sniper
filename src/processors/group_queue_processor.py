@@ -51,8 +51,18 @@ class GroupQueueProcessor(ProcessorBase):
             await self.redis_client.set(link_status_key, "error")
             return
 
-        await self.update_entity_id(str(chat_id), item.entity_id)
-        await self.redis_client.set(chat_entity_key(chat_id), str(item.entity_id))
+        # Get entity from database
+        entity = await self.pg_conn.fetchval(
+            """
+            SELECT entity FROM chat_metadata WHERE chat_id = $1
+            """,
+            str(chat_id)
+        )
+        
+        if entity:
+            # Cache entity in Redis
+            await self.redis_client.set(chat_entity_key(chat_id), entity)
+
         success = await self.try_to_join_channel(item.entity_id, chat_id)
         if success:
             await self.redis_client.set(link_status_key, "success")
@@ -108,22 +118,3 @@ class GroupQueueProcessor(ProcessorBase):
                 logger.info("Waiting for 2000 seconds")
                 await asyncio.sleep(2000)
             return False
-
-    async def update_entity_id(
-        self,
-        chat_id: str,
-        entity_id: int,
-    ) -> ChatMetadata | str:
-        try:
-            await self.pg_conn.execute(
-                """
-                INSERT INTO chat_metadata (chat_id, entity_id)
-                VALUES ($1, $2)
-                ON CONFLICT (chat_id) DO UPDATE
-                SET entity_id = EXCLUDED.entity_id
-                """,
-                chat_id,
-                entity_id,
-            )
-        except Exception as e:
-            logger.error(f"Database error in update_entity_id: {e}")
