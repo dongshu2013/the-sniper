@@ -53,35 +53,13 @@ def normalize_score(value, max_value, min_value=0):
     return ((value - min_value) / (max_value - min_value)) * 10
 
 
-def calculate_score(data):
-    if not data:
-        return {}
-
-    # Get max values for normalization
-    max_user_count = max(score["unique_users_count"] for score in data.values())
-    max_msg_count = max(score["messages_count"] for score in data.values())
-
-    for symbol in data.keys():
-        score = data[symbol]
-        # Normalize unique users (0-10)
-        normalized_users = normalize_score(score["unique_users_count"], max_user_count)
-        normalized_messages = normalize_score(score["messages_count"], max_msg_count)
-        content_quality = float(score["score"])
-        chat_score = (
-            (content_quality * 0.6)
-            + (normalized_users * 0.3)
-            + (normalized_messages * 0.1)
-        )
-        data[symbol]["final_score"] = chat_score
-
-
 async def tweet_9am(pg_conn: asyncpg.Connection):
     query = """
 WITH latest_summaries AS (
     SELECT DISTINCT ON (chat_id)
         chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
     FROM chat_score_summaries
-    WHERE last_message_timestamp > 1736883314
+    WHERE last_message_timestamp > $1
     ORDER BY chat_id, last_message_timestamp DESC
 )
 SELECT
@@ -104,31 +82,30 @@ ORDER BY ls.score DESC;
     results = await pg_conn.fetch(query, last_message_ts)
     logger.info(f"Found {len(results)} meme coins chat groups")
 
-    data = {}
-    for result in results:
-        metadata = MemeCoinEntityMetadata.model_validate(result["metadata"])
-        score = result["score"]
-        messages_count = result["messages_count"]
-        unique_users_count = result["unique_users_count"]
-        data[metadata.symbol] = {
-            "score": score,
-            "messages_count": messages_count,
-            "unique_users_count": unique_users_count,
-            "summary": result["summary"],
-            "twitter_username": result["twitter_username"],
-        }
+    max_user_count = max(result["unique_users_count"] for result in results)
+    max_msg_count = max(result["messages_count"] for result in results)
 
-    logger.info(f"Calculating final scores")
-    calculate_score(data)
     leaderboard_text = ""
-    for symbol, value in data.items():
-        score = f"Score: {value['final_score']:.1f}"
+    for result in results:
+        metadata = MemeCoinEntityMetadata.model_validate_json(result["metadata"])
+        # Normalize unique users (0-10)
+        normalized_users = normalize_score(result["unique_users_count"], max_user_count)
+        normalized_messages = normalize_score(result["messages_count"], max_msg_count)
+        content_quality = float(result["score"])
+        final_score = (
+            (content_quality * 0.6)
+            + (normalized_users * 0.3)
+            + (normalized_messages * 0.1)
+        )
+        score = f"Score: {final_score:.1f}"
         twitter = (
-            f"twitter: @{value['twitter_username']}"
-            if value["twitter_username"]
+            f"twitter: @{result['twitter_username']}"
+            if result["twitter_username"]
             else ""
         )
-        leaderboard_text += f"${symbol} ({score} {twitter}): {value['summary']}\n"
+        leaderboard_text += (
+            f"${metadata['symbol']} ({score} {twitter}): {result['summary']}\n"
+        )
 
     user_prompts = LEADERBOARD_PROMPT.format(leaderboard_text=leaderboard_text)
     logger.info(f"User prompt: {user_prompts}")
@@ -228,6 +205,7 @@ async def run(dry_run: bool = False, target_hour: int = None):
             if dry_run or not already_tweeted:
                 try:
                     tweet_text = await tweet_schedule[current_hour](pg_conn)
+                    logger.info(f"Tweet text: {tweet_text}")
                     threads = tweet_text.split("\n")
                     if not threads:
                         logger.info("No tweet text to post")
