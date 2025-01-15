@@ -264,7 +264,7 @@ Remember:
 3. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
 4. Share your opinions, do not be afraid of being aggressive and bold
 5. Add a short comment to the end of the tweet and use your humor to make it more engaging and interesting
-
+6. Add a note to tell the reader that the evaluation is based on the telegram group activity and not the token price
 
 Output:
 Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
