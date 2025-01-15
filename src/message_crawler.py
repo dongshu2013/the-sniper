@@ -14,6 +14,7 @@ from src.common.config import (
     message_seen_key,
 )
 from src.common.types import ChatMessage
+from src.processors.group_classifier import GroupClassifier
 from src.processors.group_info_updater import GroupInfoUpdater
 from src.processors.group_queue_processor import GroupQueueProcessor
 from src.processors.msg_queue_processor import MessageQueueProcessor
@@ -39,6 +40,7 @@ async def run():
     grp_queue_processor = GroupQueueProcessor(listner.client, redis_client, pg_conn)
     grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
+    grp_classifier = GroupClassifier(listner.client, redis_client, pg_conn)
 
     try:
         await asyncio.gather(
@@ -46,6 +48,7 @@ async def run():
             grp_queue_processor.start_processing(),
             grp_info_updater.start_processing(),
             msg_queue_processor.start_processing(),
+            grp_classifier.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
