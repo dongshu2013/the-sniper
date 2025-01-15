@@ -259,11 +259,12 @@ Tweet Example:
 It feels like watching a drama unfold! What is your bet today? 💬”*
 
 Remember:
-1. The one with highest score is the best and should be the first and highlighted.
-2. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
-3. Use your humor and personality to make it more engaging and interesting
+1. Order the leaderboard by score, the one with highest score is the best and should be the first and highlighted.
+2. For each token, link the twitter username right after the symbol so the project owner can be reached.
+3. Be sharp and concise, reduce the repetition summary if it looks the same for all projects
 4. Share your opinions, do not be afraid of being aggressive and bold
-5. Add a short comment to the end of the tweet to make it more engaging and interesting
+5. Add a short comment to the end of the tweet and use your humor to make it more engaging and interesting
+
 
 Output:
 Return a list of threaded tweets that are less than 250 characters each. You should separate the tweets by
