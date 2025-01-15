@@ -64,6 +64,7 @@ class ChatScoreSummarizer(ProcessorBase):
         super().__init__(interval=MIN_SUMMARY_INTERVAL)
         self.pg_conn = pg_conn
         self.last_processed_time = 0
+        self.client = AgentClient()
 
     async def _get_last_message_timestamp(self) -> int:
         result = await self.pg_conn.fetchval(
@@ -71,7 +72,7 @@ class ChatScoreSummarizer(ProcessorBase):
         )
         return max(result or 0, int(time.time()) - self.interval)
 
-    async def start_processing(self):
+    async def process(self):
         """Evaluate all chat groups that have messages."""
         if self.last_processed_time == 0:
             self.last_processed_time = await self._get_last_message_timestamp()
