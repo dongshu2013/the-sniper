@@ -60,16 +60,18 @@ class GroupClassifier(ProcessorBase):
 
         # Get all pinned messages
         try:
-            pinned_messages = await self.client.get_messages(chat, filter="pinned")
+            pinned_messages = await self.tg_client.get_messages(
+                chat.entity, filter="pinned"
+            )
             for pinned in pinned_messages:
                 if pinned and pinned.text:
                     context_parts.append(f"Pinned Message: {pinned.text}")
         except Exception as e:
-            logging.warning(f"Failed to get pinned messages: {e}")
+            logger.warning(f"Failed to get pinned messages: {e}")
 
         # Get recent messages
         try:
-            messages = await self.client.get_messages(chat, limit=50)
+            messages = await self.tg_client.get_messages(chat.entity, limit=50)
             message_texts = [msg.text for msg in messages if msg and msg.text]
             context_parts.extend(message_texts)
         except Exception as e:
@@ -79,6 +81,7 @@ class GroupClassifier(ProcessorBase):
 
     async def _extract_entity(self, context: str) -> Optional[str]:
         """Extract entity information from context."""
+        logger.info(f"Context: {context}")
         response = await self.ai_agent.chat_completion(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
