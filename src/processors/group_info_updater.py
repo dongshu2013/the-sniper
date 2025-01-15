@@ -45,13 +45,17 @@ class GroupInfoUpdater(ProcessorBase):
         if updates:
             await self.pg_conn.executemany(
                 """
-                UPDATE chat_metadata SET
-                    name = $2,
-                    about = $3,
-                    username = $4,
-                    participants_count = $5,
+                INSERT INTO chat_metadata (
+                    chat_id, name, about, username, participants_count, updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT (chat_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    about = EXCLUDED.about,
+                    username = EXCLUDED.username,
+                    participants_count = EXCLUDED.participants_count,
                     updated_at = CURRENT_TIMESTAMP
-                WHERE chat_id = $1
                 """,
                 updates,
             )
