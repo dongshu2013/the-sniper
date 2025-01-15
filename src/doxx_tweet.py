@@ -53,16 +53,16 @@ def normalize_score(value, max_value, min_value=0):
     return ((value - min_value) / (max_value - min_value)) * 10
 
 
-def calculate_score(scores):
-    if not scores:
+def calculate_score(data):
+    if not data:
         return {}
 
     # Get max values for normalization
-    max_user_count = max(score["unique_users_count"] for score in scores.values())
-    max_msg_count = max(score["messages_count"] for score in scores.values())
+    max_user_count = max(score["unique_users_count"] for score in data.values())
+    max_msg_count = max(score["messages_count"] for score in data.values())
 
-    final_scores = {}
-    for chat_id, score in scores.items():
+    for symbol in data.keys():
+        score = data[symbol]
         # Normalize unique users (0-10)
         normalized_users = normalize_score(score["unique_users_count"], max_user_count)
         normalized_messages = normalize_score(score["messages_count"], max_msg_count)
@@ -72,8 +72,7 @@ def calculate_score(scores):
             + (normalized_users * 0.3)
             + (normalized_messages * 0.1)
         )
-        final_scores[chat_id] = chat_score
-    return final_scores
+        data[symbol]["final_score"] = chat_score
 
 
 async def tweet_9am(pg_conn: asyncpg.Connection):
@@ -82,27 +81,22 @@ WITH latest_summaries AS (
     SELECT DISTINCT ON (chat_id)
         chat_id, score, summary, messages_count, unique_users_count, last_message_timestamp
     FROM chat_score_summaries
-    WHERE last_message_timestamp > $1
+    WHERE last_message_timestamp > 1736883314
     ORDER BY chat_id, last_message_timestamp DESC
-),
-joined_data AS (
-    SELECT
-        ls.chat_id,
-        ls.score,
-        ls.summary,
-        ls.messages_count,
-        ls.unique_users_count,
-        ls.last_message_timestamp,
-        e.twitter_username,
-        e.reference,
-        e.metadata
-    FROM latest_summaries ls
-    INNER JOIN entities e ON ls.chat_id = e.reference
-    WHERE e.entity_type = 'meme_coin'
 )
-SELECT * FROM joined_data
-ORDER BY score DESC
-LIMIT 10
+SELECT
+    ls.score,
+    ls.summary,
+    ls.messages_count,
+    ls.unique_users_count,
+    e.reference,
+    e.twitter_username,
+    e.metadata
+FROM latest_summaries ls
+JOIN chat_metadata cm ON ls.chat_id = cm.chat_id
+JOIN entities e ON cm.entity_id = e.id
+WHERE e.entity_type = 'meme_coin'
+ORDER BY ls.score DESC;
 """
     logger.info(f"Getting chat scores and summary")
     last_message_ts = int(time.time() - MIN_SUMMARY_INTERVAL)
@@ -110,39 +104,32 @@ LIMIT 10
     results = await pg_conn.fetch(query, last_message_ts)
     logger.info(f"Found {len(results)} meme coins chat groups")
 
-    chat_scores = {}
-    final_results = {}
+    data = {}
     for result in results:
         metadata = MemeCoinEntityMetadata.model_validate(result["metadata"])
-        chat_id = result["chat_id"]
         score = result["score"]
         messages_count = result["messages_count"]
         unique_users_count = result["unique_users_count"]
-        chat_scores[metadata.symbol] = {
+        data[metadata.symbol] = {
             "score": score,
             "messages_count": messages_count,
             "unique_users_count": unique_users_count,
+            "summary": result["summary"],
             "twitter_username": result["twitter_username"],
         }
-        final_results[metadata.symbol] = {"summary": result["summary"]}
 
     logger.info(f"Calculating final scores")
-    final_scores = calculate_score(chat_scores)
-    for chat_id, score in final_scores.items():
-        final_results[chat_id]["final_score"] = score
-
-    logger.info(f"Formatting leaderboard text")
+    calculate_score(data)
     leaderboard_text = ""
-    for symbol, result in final_results.items():
-        score = f"Score: {result['final_score']:.1f}"
+    for symbol, value in data.items():
+        score = f"Score: {value['final_score']:.1f}"
         twitter = (
-            f"twitter: @{result['twitter_username']}"
-            if result["twitter_username"]
+            f"twitter: @{value['twitter_username']}"
+            if value["twitter_username"]
             else ""
         )
-        leaderboard_text += f"${symbol} ({score} {twitter}): {result['summary']}\n"
+        leaderboard_text += f"${symbol} ({score} {twitter}): {value['summary']}\n"
 
-    logger.info(f"Formatting user prompt")
     user_prompts = LEADERBOARD_PROMPT.format(leaderboard_text=leaderboard_text)
     logger.info(f"User prompt: {user_prompts}")
 
