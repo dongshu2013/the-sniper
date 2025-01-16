@@ -31,6 +31,8 @@ def parse_ai_response(response: str, fields: list[str] = None) -> dict:
             else:
                 result[field] = None
 
+        # exclude none fields
+        result = {k: v for k, v in result.items() if v is not None}
         return result
 
 
