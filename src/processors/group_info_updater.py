@@ -87,7 +87,6 @@ class GroupInfoUpdater(ProcessorBase):
         self.ai_agent = AgentClient()
 
     async def process(self):
-        updates = []
         dialogs = await self.get_all_dialogs()
         chat_ids = [normalize_chat_id(dialog.id) for dialog in dialogs]
         chat_info_map = await self.get_all_chat_metadata(chat_ids)
@@ -115,7 +114,7 @@ class GroupInfoUpdater(ProcessorBase):
             if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
                 quality_reports = quality_reports[-5:]
 
-            updates.append(
+            await self._update_metadata(
                 (
                     chat_id,
                     dialog.name or None,
@@ -126,10 +125,6 @@ class GroupInfoUpdater(ProcessorBase):
                     json.dumps(quality_reports),
                 )
             )
-
-        # Batch update metadata
-        if updates:
-            await self._batch_update_metadata(updates)
 
     async def get_all_dialogs(self):
         dialogs = []
@@ -200,7 +195,7 @@ class GroupInfoUpdater(ProcessorBase):
         return "\n".join(filter(None, context_parts))
 
     async def _extract_and_update_entity(
-        self, dialog: any, existing_entity: dict
+        self, dialog: any, existing_entity: dict | None
     ) -> Optional[dict]:
         """Extract entity information using AI."""
         try:
@@ -211,7 +206,12 @@ class GroupInfoUpdater(ProcessorBase):
                     {
                         "role": "user",
                         "content": ENTITY_EXTRACTOR_PROMPT.format(
-                            context=context, existing_entity=existing_entity
+                            context=context,
+                            existing_entity=(
+                                json.dumps(existing_entity)
+                                if existing_entity
+                                else "No Data"
+                            ),
                         ),
                     },
                 ]
@@ -268,10 +268,10 @@ class GroupInfoUpdater(ProcessorBase):
             logger.error(f"Failed to evaluate chat quality: {e}")
             return None
 
-    async def _batch_update_metadata(self, updates):
-        """Batch update chat metadata."""
+    async def _update_metadata(self, update: list[tuple]):
+        """Update chat metadata."""
         try:
-            await self.pg_conn.executemany(
+            await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
                     chat_id, name, about, username, participants_count, entity, quality_reports, updated_at
@@ -285,7 +285,7 @@ class GroupInfoUpdater(ProcessorBase):
                     entity = EXCLUDED.entity,
                     quality_reports = EXCLUDED.quality_reports
                 """,
-                updates,
+                update,
             )
         except Exception as e:
-            logger.error(f"Failed to batch update metadata: {e}")
+            logger.error(f"Failed to update metadata: {e}")

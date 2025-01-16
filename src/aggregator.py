@@ -17,10 +17,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-redis_client = Redis.from_url(REDIS_URL)
-
 
 async def run():
+    redis_client = Redis.from_url(REDIS_URL)
     pg_conn = await asyncpg.connect(DATABASE_URL)
 
     tg_link_importer = TgLinkImporter(pg_conn)
