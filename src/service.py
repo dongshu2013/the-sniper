@@ -20,7 +20,8 @@ async def get_tg_links():
     try:
         query = """
             SELECT DISTINCT chat_id
-            FROM chat_messages
+            FROM tg_link_status
+            WHERE status = 'pending'
             ORDER BY chat_id
         """
         results = await conn.fetch(query)

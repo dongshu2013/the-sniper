@@ -4,12 +4,10 @@ import time
 from typing import Optional, Tuple
 
 from asyncpg import Connection
-from redis.asyncio import Redis
 from telethon import TelegramClient
 
 from src.common.agent_client import AgentClient
-from src.common.config import chat_entity_key
-from src.common.utils import parse_ai_response
+from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -22,6 +20,8 @@ logger = logging.getLogger(__name__)
 MIN_MESSAGES_THRESHOLD = 10
 INACTIVE_HOURS_THRESHOLD = 24
 LOW_QUALITY_THRESHOLD = 3.0
+
+MAX_QUALITY_REPORTS_COUNT = 5
 
 # flake8: noqa: E501
 # format: off
@@ -70,43 +70,45 @@ Output JSON format:
 }
 
 Scoring guidelines:
-- 0-3: Low quality (spam, repetitive, no real discussion)
-- 4-6: Medium quality (some engagement but limited depth)
-- 7-10: High quality (active discussion, valuable information)
+- 0: if the group is dead and no one is talking
+- 1-3: Low quality (spam, repetitive posts, no real discussion)
+- 4-7: Medium quality (some engagement but limited depth)
+- 8-10: High quality (active discussion, valuable information)
 """
 # format: on
 
 
 class GroupInfoUpdater(ProcessorBase):
-    def __init__(
-        self, client: TelegramClient, redis_client: Redis, pg_conn: Connection
-    ):
+    def __init__(self, client: TelegramClient, pg_conn: Connection):
         super().__init__(interval=24 * 3600 * 3600)
         self.client = client
-        self.redis_client = redis_client
         self.pg_conn = pg_conn
         self.ai_agent = AgentClient()
 
     async def process(self):
         updates = []
-        async for dialog in self.client.iter_dialogs(ignore_migrated=True):
+        dialogs = await self.get_all_dialogs()
+        chat_ids = [normalize_chat_id(dialog.id) for dialog in dialogs]
+        chat_info_map = await self.get_all_chat_metadata(chat_ids)
+
+        for chat_id, dialog in zip(chat_ids, dialogs):
             if not dialog.is_group and not dialog.is_channel:
                 continue
 
-            chat_id = str(dialog.id)
-            if chat_id.startswith("-100"):
-                chat_id = chat_id[4:]
-
             # 2. Extract and update entity information
             logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
-            entity_json = await self.redis_client.get(chat_entity_key(chat_id))
-            entity = json.loads(entity_json) if entity_json else None
-            if not self._is_valid_entity(entity):
+            if not self._is_valid_entity(chat_info_map[chat_id]["entity"]):
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
 
             # 3. Evaluate chat quality
             quality_report = await self._evaluate_chat_quality(chat_id)
+            quality_reports = json.loads(chat_info_map[chat_id]["quality_reports"])
+            if quality_report:
+                quality_reports.append(quality_report)
+            # only keep the latest 5 reports
+            if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
+                quality_reports = quality_reports[-5:]
 
             updates.append(
                 (
@@ -116,7 +118,7 @@ class GroupInfoUpdater(ProcessorBase):
                     getattr(dialog.entity, "username", None),
                     getattr(dialog.entity, "participants_count", 0),
                     json.dumps(entity) if entity else None,
-                    json.dumps([quality_report]) if quality_report else None,
+                    json.dumps(quality_reports),
                 )
             )
 
@@ -124,7 +126,32 @@ class GroupInfoUpdater(ProcessorBase):
         if updates:
             await self._batch_update_metadata(updates)
 
-    async def _is_valid_entity(self, entity: dict) -> bool:
+    async def get_all_dialogs(self):
+        dialogs = []
+        async for dialog in self.client.iter_dialogs(ignore_migrated=True):
+            if not dialog.is_group and not dialog.is_channel:
+                continue
+            dialogs.append(dialog)
+        return dialogs
+
+    async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
+        rows = await self.pg_conn.fetch(
+            "SELECT chat_id, entity, quality_reports FROM chat_metadata WHERE chat_id = ANY($1)",
+            chat_ids,
+        )
+        return {
+            row["chat_id"]: {
+                "entity": row["entity"],
+                "quality_reports": row["quality_reports"],
+            }
+            for row in rows
+        }
+
+    async def _is_valid_entity(self, entity: dict | str | None) -> bool:
+        if entity is None:
+            return False
+        if isinstance(entity, str):
+            entity = json.loads(entity)
         if entity.get("type") == "unknown":
             return False
         if entity.get("type") == "memecoin":
@@ -243,7 +270,7 @@ class GroupInfoUpdater(ProcessorBase):
                     participants_count = EXCLUDED.participants_count,
                     updated_at = CURRENT_TIMESTAMP,
                     entity = EXCLUDED.entity,
-                    quality_reports = chat_metadata.quality_reports || EXCLUDED.quality_reports
+                    quality_reports = EXCLUDED.quality_reports
                 """,
                 updates,
             )

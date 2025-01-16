@@ -31,16 +31,16 @@ redis_client = Redis.from_url(REDIS_URL)
 
 
 async def run():
+    pg_conn = await asyncpg.connect(DATABASE_URL)
+
     listner = TelegramListener()
     await listner.start()
     logger.info("Telegram bot started successfully")
-
-    pg_conn = await asyncpg.connect(DATABASE_URL)
-
     await register_handlers(listner.client)
+
     tg_link_importer = TgLinkImporter(pg_conn)
-    tg_link_processor = TgLinkProcessor(listner.client, redis_client, pg_conn)
-    grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
+    tg_link_processor = TgLinkProcessor(listner.client, pg_conn)
+    grp_info_updater = GroupInfoUpdater(listner.client, pg_conn)
     msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
     summarizer = ChatScoreSummarizer(pg_conn)
 

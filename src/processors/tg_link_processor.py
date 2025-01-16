@@ -2,10 +2,10 @@ import logging
 from urllib.parse import urlparse
 
 import asyncpg
-from redis.asyncio import Redis
 from telethon import TelegramClient
 
 from src.common.types import TgLinkStatus
+from src.common.utils import normalize_chat_id
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -16,12 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 class TgLinkProcessor(ProcessorBase):
-    def __init__(
-        self, client: TelegramClient, redis_client: Redis, pg_conn: asyncpg.Connection
-    ):
+    def __init__(self, client: TelegramClient, pg_conn: asyncpg.Connection):
         super().__init__(interval=30)
         self.client = client
-        self.redis_client = redis_client
         self.pg_conn = pg_conn
 
     async def process(self):
@@ -66,6 +63,7 @@ class TgLinkProcessor(ProcessorBase):
             logger.error(f"Failed to get entity from link {tme_link}: {e}")
             return TgLinkStatus.ERROR.value, None
 
+        chat_id = normalize_chat_id(entity.id)
         logger.info(f"Fetched entity: {entity}")
         is_valid = (
             hasattr(entity, "broadcast")  # channels
@@ -74,11 +72,6 @@ class TgLinkProcessor(ProcessorBase):
         )
         if not is_valid:
             logger.info(f"Group {tme_link} is not a group")
-            return TgLinkStatus.IGNORED.value, None
+            return TgLinkStatus.IGNORED.value, chat_id
 
-        chat_id = str(entity.id)
-        if chat_id.startswith("-100"):
-            chat_id = chat_id[4:]
-        elif chat_id.startswith("-"):
-            chat_id = chat_id[1:]
         return TgLinkStatus.PROCESSED.value, chat_id

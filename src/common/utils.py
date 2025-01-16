@@ -32,3 +32,12 @@ def parse_ai_response(response: str, fields: list[str] = None) -> dict:
                 result[field] = None
 
         return result
+
+
+def normalize_chat_id(chat_id: str | int) -> str:
+    chat_id = str(chat_id)
+    if chat_id.startswith("-100"):
+        return chat_id[4:]
+    elif chat_id.startswith("-"):
+        return chat_id[1:]
+    return chat_id
