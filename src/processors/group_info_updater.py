@@ -199,7 +199,7 @@ class GroupInfoUpdater(ProcessorBase):
             pinned_messages = await self.client.get_messages(
                 dialog.entity,
                 filter=InputMessagesFilterPinned,
-                limit=1000,
+                limit=100,
             )
             for message in pinned_messages:
                 if message and message.text:
