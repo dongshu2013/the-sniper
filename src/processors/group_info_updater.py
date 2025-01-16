@@ -273,10 +273,14 @@ class GroupInfoUpdater(ProcessorBase):
                 return 0.0, "inactive"
 
             # Prepare messages for quality analysis
-            messages_text = "\n".join(
-                [f"[{msg.date}] {msg.sender.username}: {msg.text}" for msg in messages]
-            )
-            messages_text = messages_text[:18000]  # limit buffer
+            message_texts = []
+            for msg in messages:
+                if msg.text:
+                    sender = await msg.get_sender()
+                    sender_id = sender.id if sender else "Unknown"
+                    message_texts.append(f"[{msg.date}] {sender_id}: {msg.text}")
+
+            messages_text = "\n".join(message_texts)[:18000]  # limit buffer
 
             # Use AI to evaluate quality
             response = await self.ai_agent.chat_completion(
