@@ -193,29 +193,33 @@ class GroupInfoUpdater(ProcessorBase):
         context_parts = []
         context_parts.append(f"\nChat Title: {dialog.name}\n")
         if description:
-            context_parts.append(f"\nDescription: {description}\n")
+            # Limit description length
+            context_parts.append(f"\nDescription: {description[:500]}\n")
 
         try:
             pinned_messages = await self.client.get_messages(
                 dialog.entity,
                 filter=InputMessagesFilterPinned,
-                limit=50,
+                limit=10,  # Reduced from 50 to 3 pinned messages
             )
             for message in pinned_messages:
                 if message and message.text:
+                    # Limit each pinned message length
                     context_parts.append(f"\nPinned Message: {message.text}\n")
         except Exception as e:
             logger.warning(f"Failed to get pinned messages: {e}")
 
         try:
             context_parts.append("\nRecent Messages:\n")
-            messages = await self.client.get_messages(dialog.entity, limit=50)
+            messages = await self.client.get_messages(dialog.entity, limit=10)
             message_texts = [msg.text for msg in messages if msg and msg.text]
             context_parts.extend(message_texts)
         except Exception as e:
             logger.warning(f"Failed to get messages: {e}")
 
-        return "\n".join(filter(None, context_parts))
+        # Join and limit total context length if needed
+        context = "\n".join(filter(None, context_parts))
+        return context[:32000]  # Limit total context length to be safe
 
     async def _extract_and_update_entity(
         self, dialog: any, existing_entity: dict | None, description: str | None
