@@ -100,9 +100,9 @@ class GroupInfoUpdater(ProcessorBase):
             # 2. Extract and update entity information
             entity, is_finalized = self._parse_entity(chat_info.get("entity", None))
             if not is_finalized:
-                logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
+                logger.info(f"extracted entity for group {dialog.name}: {entity}")
 
             # 3. Evaluate chat quality
             logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
@@ -114,6 +114,7 @@ class GroupInfoUpdater(ProcessorBase):
             if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
                 quality_reports = quality_reports[-5:]
 
+            logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
                 (
                     chat_id,
@@ -268,7 +269,7 @@ class GroupInfoUpdater(ProcessorBase):
             logger.error(f"Failed to evaluate chat quality: {e}")
             return None
 
-    async def _update_metadata(self, update: list[tuple]):
+    async def _update_metadata(self, update: tuple):
         """Update chat metadata."""
         try:
             await self.pg_conn.execute(
@@ -285,7 +286,7 @@ class GroupInfoUpdater(ProcessorBase):
                     entity = EXCLUDED.entity,
                     quality_reports = EXCLUDED.quality_reports
                 """,
-                update,
+                **update,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
