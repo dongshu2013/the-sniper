@@ -121,7 +121,7 @@ class GroupInfoUpdater(ProcessorBase):
 
             # 3. Evaluate chat quality
             logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
-            quality_report = await self._evaluate_chat_quality(chat_id)
+            quality_report = await self._evaluate_chat_quality(dialog)
             quality_reports = json.loads(chat_info.get("quality_reports", "[]"))
             if quality_report:
                 quality_reports.append(quality_report)
