@@ -281,6 +281,7 @@ class GroupInfoUpdater(ProcessorBase):
                     for msg in recent_messages
                 ]
             )
+            messages_text = messages_text[:32000]  # limit buffer
 
             # Use AI to evaluate quality
             response = await self.ai_agent.chat_completion(
