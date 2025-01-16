@@ -65,12 +65,8 @@ You are an expert in evaluating chat quality. Analyze the given messages and eva
 
 You will follow the following evaluation guidelines:
 1. User engagement and interactions: If there are a lot of different people posting and engaging, it's a good sign.
-2. Conversation quality and diversity: If the messages are diverse and valuable, it's a good sign.
-
-The group of users could be gathered for one topic(hiring, memecoin, events, project promotion, etc), the conversation
-is considered as diverse as long as it's not the same group of people posting repetitive messages. The quality of the
-conversation is considered as high quality if it's not repetitive and the information is relevant and valuable.
-
+2. Conversation quality and diversity: If the messages are diverse and providing different information(including promotional information), it's a good sign.
+3. If the messages are repetitive and the same group of people are posting, it's a bad sign.
 
 Output JSON format:
 {
@@ -82,9 +78,9 @@ reason should be less than 10 words if possible.
 
 Scoring guidelines:
 - 0: if the group is dead and no one is talking
-- 1-3: few engagment, low quality and limited information (spam, repetitive posts, no real discussion)
-- 4-7: medium quality (active engagement with some diverse information)
-- 8-10: high quality (active engagement, diverse user interaction and valuable discussions)
+- 1-3(low quality): low user engagement, spam, repetitive posts, no real discussion
+- 4-7(medium quality): medium user engagement, less repetitive posts with some diverse information
+- 8-10(high quality): active user engagement, diverse user posts and valuable discussions, very few repetitive posts
 """
 
 # format: on
