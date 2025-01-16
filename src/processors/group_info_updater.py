@@ -99,7 +99,8 @@ class GroupInfoUpdater(ProcessorBase):
             chat_info = chat_info_map.get(chat_id, {})
             # 2. Extract and update entity information
             logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
-            if not self._is_valid_entity(chat_info.get("entity", None)):
+            entity = chat_info.get("entity", None)
+            if not self._is_valid_entity(entity):
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
 
