@@ -83,8 +83,8 @@ reason should be less than 10 words if possible.
 Scoring guidelines:
 - 0: if the group is dead and no one is talking
 - 1-3: few engagment, low quality and limited information (spam, repetitive posts, no real discussion)
-- 4-6: medium quality (active engagement with some diverse information)
-- 7-10: high quality (active engagement, diverse user interaction and valuable discussions)
+- 4-7: medium quality (active engagement with some diverse information)
+- 8-10: high quality (active engagement, diverse user interaction and valuable discussions)
 """
 
 # format: on
