@@ -5,6 +5,9 @@ from typing import Optional, Tuple
 
 from asyncpg import Connection
 from telethon import TelegramClient
+from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.messages import GetFullChatRequest
+from telethon.tl.types import InputMessagesFilterPinned
 
 from src.common.agent_client import AgentClient
 from src.common.types import EntityType
@@ -97,10 +100,17 @@ class GroupInfoUpdater(ProcessorBase):
                 continue
 
             chat_info = chat_info_map.get(chat_id, {})
+
+            # 1. Get group description
+            description = await self.get_group_description(dialog)
+            logger.info(f"group description: {description}")
+
             # 2. Extract and update entity information
             entity, is_finalized = self._parse_entity(chat_info.get("entity", None))
             if not is_finalized:
-                new_entity = await self._extract_and_update_entity(dialog, entity)
+                new_entity = await self._extract_and_update_entity(
+                    dialog, entity, description
+                )
                 entity = entity.update(new_entity or {}) if entity else new_entity
                 logger.info(f"extracted entity for group {dialog.name}: {entity}")
 
@@ -119,13 +129,21 @@ class GroupInfoUpdater(ProcessorBase):
                 (
                     chat_id,
                     dialog.name or None,
-                    getattr(dialog.entity, "about", None),
+                    description or None,
                     getattr(dialog.entity, "username", None),
                     getattr(dialog.entity, "participants_count", 0),
                     json.dumps(entity) if entity else None,
                     json.dumps(quality_reports),
                 )
             )
+
+    async def get_group_description(self, dialog: any) -> Optional[str]:
+        if dialog.is_channel:
+            result = await self.client(GetFullChannelRequest(channel=dialog.entity))
+            return result.full_chat.about or None
+        else:
+            result = await self.client(GetFullChatRequest(chat_id=dialog.entity.id))
+            return result.full_chat.about or None
 
     async def get_all_dialogs(self):
         dialogs = []
@@ -168,21 +186,24 @@ class GroupInfoUpdater(ProcessorBase):
             return entity, is_finalized
         return entity, True
 
-    async def _gather_context(self, dialog: any) -> Optional[str]:
+    async def _gather_context(
+        self, dialog: any, description: str | None
+    ) -> Optional[str]:
         """Gather context from various sources in the chat."""
         context_parts = []
         context_parts.append(f"Chat Title: {dialog.name}")
-        about = getattr(dialog.entity, "about", None)
-        if about:
-            context_parts.append(f"Description: {about}")
+        if description:
+            context_parts.append(f"Description: {description}")
 
         try:
-            if dialog.pinned:
-                pinned_msg = await self.client.get_messages(
-                    dialog.entity, ids=dialog.pinned
-                )
-                if pinned_msg and pinned_msg.text:
-                    context_parts.append(f"Pinned Message: {pinned_msg.text}")
+            pinned_messages = await self.client.get_messages(
+                dialog.entity,
+                filter=InputMessagesFilterPinned,
+                limit=1000,
+            )
+            for message in pinned_messages:
+                if message and message.text:
+                    context_parts.append(f"Pinned Message: {message.text}")
         except Exception as e:
             logger.warning(f"Failed to get pinned messages: {e}")
 
@@ -196,11 +217,11 @@ class GroupInfoUpdater(ProcessorBase):
         return "\n".join(filter(None, context_parts))
 
     async def _extract_and_update_entity(
-        self, dialog: any, existing_entity: dict | None
+        self, dialog: any, existing_entity: dict | None, description: str | None
     ) -> Optional[dict]:
         """Extract entity information using AI."""
         try:
-            context = await self._gather_context(dialog)
+            context = await self._gather_context(dialog, description)
             response = await self.ai_agent.chat_completion(
                 [
                     {"role": "system", "content": SYSTEM_PROMPT},
