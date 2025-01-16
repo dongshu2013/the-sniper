@@ -70,7 +70,7 @@ You are an expert in evaluating chat quality. Analyze the given messages and eva
 Output JSON format:
 {
     "score": float (0-10),
-    "reason": "brief explanation"
+    "reason": "very brief explanation"
 }
 
 Remember:
@@ -260,31 +260,23 @@ class GroupInfoUpdater(ProcessorBase):
             )
             return None
 
-    async def _evaluate_chat_quality(self, chat_id: str) -> Optional[Tuple[float, str]]:
+    async def _evaluate_chat_quality(self, dialog: any) -> Optional[Tuple[float, str]]:
         """Evaluate chat quality based on recent messages."""
         try:
-            # Get recent messages count and timestamps
-            recent_messages = await self.pg_conn.fetch(
-                """
-                SELECT message_timestamp, message_text, sender_id
-                FROM chat_messages
-                WHERE chat_id = $1
-                AND message_timestamp > $2
-                ORDER BY message_timestamp DESC
-                LIMIT 500
-                """,
-                chat_id,
-                int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600,
+            messages = await self.client.get_messages(
+                dialog.entity,
+                limit=500,
+                offset_date=int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600,
             )
 
-            if len(recent_messages) < MIN_MESSAGES_THRESHOLD:
+            if len(messages) < MIN_MESSAGES_THRESHOLD:
                 return 0.0, "inactive"
 
             # Prepare messages for quality analysis
             messages_text = "\n".join(
                 [
                     f"[{msg['message_timestamp']}] {msg['sender_id']}: {msg['message_text']}"
-                    for msg in recent_messages
+                    for msg in messages
                 ]
             )
             messages_text = messages_text[:18000]  # limit buffer
