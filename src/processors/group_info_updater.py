@@ -90,20 +90,22 @@ class GroupInfoUpdater(ProcessorBase):
         dialogs = await self.get_all_dialogs()
         chat_ids = [normalize_chat_id(dialog.id) for dialog in dialogs]
         chat_info_map = await self.get_all_chat_metadata(chat_ids)
+        logger.info(f"loaded {len(chat_info_map)} group metadata")
 
         for chat_id, dialog in zip(chat_ids, dialogs):
             if not dialog.is_group and not dialog.is_channel:
                 continue
 
+            chat_info = chat_info_map.get(chat_id, {})
             # 2. Extract and update entity information
             logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
-            if not self._is_valid_entity(chat_info_map[chat_id]["entity"]):
+            if not self._is_valid_entity(chat_info.get("entity", None)):
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
 
             # 3. Evaluate chat quality
             quality_report = await self._evaluate_chat_quality(chat_id)
-            quality_reports = json.loads(chat_info_map[chat_id]["quality_reports"])
+            quality_reports = json.loads(chat_info.get("quality_reports", "[]"))
             if quality_report:
                 quality_reports.append(quality_report)
             # only keep the latest 5 reports
