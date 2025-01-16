@@ -272,6 +272,15 @@ class GroupInfoUpdater(ProcessorBase):
     async def _update_metadata(self, update: tuple):
         """Update chat metadata."""
         try:
+            (
+                chat_id,
+                name,
+                about,
+                username,
+                participants_count,
+                entity,
+                quality_reports,
+            ) = update
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
@@ -286,7 +295,13 @@ class GroupInfoUpdater(ProcessorBase):
                     entity = EXCLUDED.entity,
                     quality_reports = EXCLUDED.quality_reports
                 """,
-                **update,
+                chat_id,
+                name,
+                about,
+                username,
+                participants_count,
+                entity,
+                quality_reports,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
