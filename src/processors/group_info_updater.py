@@ -99,8 +99,8 @@ class GroupInfoUpdater(ProcessorBase):
 
             chat_info = chat_info_map.get(chat_id, {})
             # 2. Extract and update entity information
-            entity = chat_info.get("entity", None)
-            if not self._is_valid_entity(entity):
+            entity, is_finalized = self._parse_entity(chat_info.get("entity", None))
+            if not is_finalized:
                 logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
@@ -152,41 +152,46 @@ class GroupInfoUpdater(ProcessorBase):
             for row in rows
         }
 
-    async def _is_valid_entity(self, entity: dict | str | None) -> bool:
+    def _parse_entity(self, entity: dict | str | None) -> Tuple[dict | None, bool]:
         if entity is None:
-            return False
+            return None, False
         if isinstance(entity, str):
-            entity = json.loads(entity)
+            try:
+                entity = json.loads(entity)
+            except Exception as e:
+                logger.error(f"Failed to parse entity: {e}")
+                return None, False
         entity_type = entity.get("type", None)
         if entity_type is None:
-            return False
+            return None, False
         if entity_type == EntityType.UNKNOWN.value:
-            return False
+            return None, False
         if entity_type == EntityType.MEMECOIN.value:
             # if entity is memecoin, it must have name and twitter
-            return entity.get("name") and entity.get("twitter")
-        return True
+            is_finalized = entity.get("name") and entity.get("twitter")
+            return entity, is_finalized
+        return entity, True
 
-    async def _gather_context(self, chat) -> Optional[str]:
+    async def _gather_context(self, dialog: any) -> Optional[str]:
         """Gather context from various sources in the chat."""
         context_parts = []
-        context_parts.append(f"Chat Title: {chat.title}")
-        about = getattr(chat.entity, "about", None)
+        context_parts.append(f"Chat Title: {dialog.name}")
+        about = getattr(dialog.entity, "about", None)
         if about:
             context_parts.append(f"Description: {about}")
 
         try:
-            pinned_messages = await self.client.get_messages(
-                chat.entity, filter="pinned"
-            )
-            for pinned in pinned_messages:
-                if pinned and pinned.text:
-                    context_parts.append(f"Pinned Message: {pinned.text}")
+            if dialog.pinned:
+                pinned_msg = await self.client.get_messages(
+                    dialog.entity, ids=dialog.pinned
+                )
+                if pinned_msg and pinned_msg.text:
+                    context_parts.append(f"Pinned Message: {pinned_msg.text}")
         except Exception as e:
             logger.warning(f"Failed to get pinned messages: {e}")
 
         try:
-            messages = await self.client.get_messages(chat.entity, limit=50)
+            messages = await self.client.get_messages(dialog.entity, limit=50)
             message_texts = [msg.text for msg in messages if msg and msg.text]
             context_parts.extend(message_texts)
         except Exception as e:
