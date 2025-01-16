@@ -292,13 +292,17 @@ class GroupInfoUpdater(ProcessorBase):
                 ]
             )
 
+            logger.info(f"response from ai: {response}")
             report = parse_ai_response(
                 response["choices"][0]["message"]["content"], ["score", "reason"]
             )
             report["processed_at"] = int(time.time())
             return report
         except Exception as e:
-            logger.error(f"Failed to evaluate chat quality: {e}")
+            logger.error(
+                f"Failed to evaluate chat quality: {e}",
+                exc_info=True,
+            )
             return None
 
     async def _update_metadata(self, update: tuple):
