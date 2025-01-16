@@ -32,7 +32,7 @@ async def run():
     listner = TelegramListener()
     await listner.start()
     logger.info("Telegram bot started successfully")
-    await register_handlers(listner.client)
+    #    await register_handlers(listner.client)
 
     tg_link_processor = TgLinkProcessor(listner.client, pg_conn)
     grp_info_updater = GroupInfoUpdater(listner.client, pg_conn)

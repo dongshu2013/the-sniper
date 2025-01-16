@@ -274,10 +274,7 @@ class GroupInfoUpdater(ProcessorBase):
 
             # Prepare messages for quality analysis
             messages_text = "\n".join(
-                [
-                    f"[{msg['message_timestamp']}] {msg['sender_id']}: {msg['message_text']}"
-                    for msg in messages
-                ]
+                [f"[{msg.date}] {msg.sender.username}: {msg.text}" for msg in messages]
             )
             messages_text = messages_text[:18000]  # limit buffer
 
