@@ -61,27 +61,27 @@ information.
 """
 
 QUALITY_EVALUATION_PROMPT = """
-You are an expert in evaluating chat quality. Analyze the given messages and evaluate:
-1. Message frequency and distribution
+You are an expert in evaluating chat quality. Analyze the given messages
+and evaluate the chat quality based on:
+1. User engagement and interactions
 2. Conversation quality and diversity
-3. User engagement and interaction
-4. Information value and relevance
 
 Output JSON format:
 {
     "score": float (0-10),
     "reason": "very brief explanation"
 }
-
-Remember:
 For the reason field, you should explain why you give the score very briefly, the overall
 reason should be less than 10 words if possible.
 
 Scoring guidelines:
 - 0: if the group is dead and no one is talking
-- 1-3: Low quality (spam, repetitive posts, no real discussion)
-- 4-7: Medium quality (some engagement but limited depth)
-- 8-10: High quality (active discussion, valuable information)
+- 1-3: few engagment, low quality and limited information (spam, repetitive posts, no real discussion)
+- 4-7: medium quality (some engagement but limited information)
+- 8-10: high quality (active engagement, diverse user interaction and valuable discussions)
+
+Remember:
+If a lot of people are posting and engaging, even if it's promotional, it should be considered as high quality.
 """
 
 # format: on
