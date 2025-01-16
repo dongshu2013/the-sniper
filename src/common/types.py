@@ -16,9 +16,9 @@ class TgLinkStatus(Enum):
     IGNORED = "ignored"
 
 
-class ChatStatus(Enum):
-    INACTIVE = "inactive"
-    LOW_QUALITY = "low_quality"
+class AccountChatStatus(Enum):
+    JOINED = "watching"
+    QUIT = "quit"
 
 
 class MemeCoinEntityMetadata(BaseModel):
