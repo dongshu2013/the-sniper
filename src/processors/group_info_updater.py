@@ -73,12 +73,17 @@ Output JSON format:
     "reason": "brief explanation"
 }
 
+Remember:
+For the reason field, you should explain why you give the score very briefly, the overall
+reason should be less than 10 words if possible.
+
 Scoring guidelines:
 - 0: if the group is dead and no one is talking
 - 1-3: Low quality (spam, repetitive posts, no real discussion)
 - 4-7: Medium quality (some engagement but limited depth)
 - 8-10: High quality (active discussion, valuable information)
 """
+
 # format: on
 
 
@@ -219,7 +224,7 @@ class GroupInfoUpdater(ProcessorBase):
 
         # Join and limit total context length if needed
         context = "\n".join(filter(None, context_parts))
-        return context[:32000]  # Limit total context length to be safe
+        return context[:24000]  # Limit total context length to be safe
 
     async def _extract_and_update_entity(
         self, dialog: any, existing_entity: dict | None, description: str | None
@@ -282,7 +287,7 @@ class GroupInfoUpdater(ProcessorBase):
                     for msg in recent_messages
                 ]
             )
-            messages_text = messages_text[:32000]  # limit buffer
+            messages_text = messages_text[:24000]  # limit buffer
 
             # Use AI to evaluate quality
             response = await self.ai_agent.chat_completion(
