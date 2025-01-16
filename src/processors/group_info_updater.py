@@ -239,12 +239,16 @@ class GroupInfoUpdater(ProcessorBase):
                     },
                 ]
             )
+            logger.info(f"response from ai: {response}")
             return parse_ai_response(
                 response["choices"][0]["message"]["content"],
                 ["type", "name", "chain", "address", "website", "twitter"],
             )
         except Exception as e:
-            logger.error(f"Failed to extract entity: {e}")
+            logger.error(
+                f"Failed to extract entity for group {dialog.name}: {str(e)}",
+                exc_info=True,
+            )
             return None
 
     async def _evaluate_chat_quality(self, chat_id: str) -> Optional[Tuple[float, str]]:
