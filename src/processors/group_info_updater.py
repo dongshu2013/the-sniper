@@ -191,23 +191,24 @@ class GroupInfoUpdater(ProcessorBase):
     ) -> Optional[str]:
         """Gather context from various sources in the chat."""
         context_parts = []
-        context_parts.append(f"Chat Title: {dialog.name}")
+        context_parts.append(f"\nChat Title: {dialog.name}\n")
         if description:
-            context_parts.append(f"Description: {description}")
+            context_parts.append(f"\nDescription: {description}\n")
 
         try:
             pinned_messages = await self.client.get_messages(
                 dialog.entity,
                 filter=InputMessagesFilterPinned,
-                limit=100,
+                limit=50,
             )
             for message in pinned_messages:
                 if message and message.text:
-                    context_parts.append(f"Pinned Message: {message.text}")
+                    context_parts.append(f"\nPinned Message: {message.text}\n")
         except Exception as e:
             logger.warning(f"Failed to get pinned messages: {e}")
 
         try:
+            context_parts.append("\nRecent Messages:\n")
             messages = await self.client.get_messages(dialog.entity, limit=50)
             message_texts = [msg.text for msg in messages if msg and msg.text]
             context_parts.extend(message_texts)
