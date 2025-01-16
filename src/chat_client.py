@@ -15,8 +15,7 @@ from src.common.config import (
 )
 from src.common.types import ChatMessage
 from src.processors.group_info_updater import GroupInfoUpdater
-from src.processors.msg_queue_processor import MessageQueueProcessor
-from src.processors.tg_link_processor import GroupQueueProcessor
+from src.processors.tg_link_processor import TgLinkProcessor
 
 # Create logger instance
 logging.basicConfig(
@@ -29,23 +28,20 @@ redis_client = Redis.from_url(REDIS_URL)
 
 
 async def run():
+    pg_conn = await asyncpg.connect(DATABASE_URL)
     listner = TelegramListener()
     await listner.start()
     logger.info("Telegram bot started successfully")
-
-    pg_conn = await asyncpg.connect(DATABASE_URL)
-
     await register_handlers(listner.client)
-    grp_queue_processor = GroupQueueProcessor(listner.client, redis_client, pg_conn)
-    grp_info_updater = GroupInfoUpdater(listner.client, redis_client, pg_conn)
-    msg_queue_processor = MessageQueueProcessor(redis_client, pg_conn)
+
+    tg_link_processor = TgLinkProcessor(listner.client, pg_conn)
+    grp_info_updater = GroupInfoUpdater(listner.client, pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
-            grp_queue_processor.start_processing(),
+            tg_link_processor.start_processing(),
             grp_info_updater.start_processing(),
-            msg_queue_processor.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
