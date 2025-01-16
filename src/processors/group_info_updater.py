@@ -81,7 +81,8 @@ Scoring guidelines:
 - 8-10: high quality (active engagement, diverse user interaction and valuable discussions)
 
 Remember:
-If a lot of people are posting and engaging, even if it's promotional, it should be considered as high quality.
+If a lot of different people are posting and engaging and the information posted is not repetitive,
+even if it's promotional, it should be considered as medium to high quality.
 """
 
 # format: on
