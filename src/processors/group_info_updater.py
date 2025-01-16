@@ -266,6 +266,7 @@ class GroupInfoUpdater(ProcessorBase):
                 WHERE chat_id = $1
                 AND message_timestamp > $2
                 ORDER BY message_timestamp DESC
+                LIMIT 500
                 """,
                 chat_id,
                 int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600,
