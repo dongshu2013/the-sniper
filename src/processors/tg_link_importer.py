@@ -117,6 +117,10 @@ class TgLinkImporter(ProcessorBase):
 
         tg_links = [entity.telegram for entity in entities if entity.telegram]
 
+        if not tg_links:
+            logger.info("No telegram links found")
+            return
+
         logger.info(f"Importing {len(tg_links)} telegram links")
         await self.pg_conn.executemany(
             """
