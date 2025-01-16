@@ -5,8 +5,9 @@ from pydantic import BaseModel
 
 
 class EntityType(Enum):
-    MEME_COIN = "meme_coin"
+    MEMECOIN = "memecoin"
     TWITTER_KOL = "twitter_kol"
+    UNKNOWN = "unknown"
 
 
 class TgLinkStatus(Enum):

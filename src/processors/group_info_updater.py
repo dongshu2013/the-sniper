@@ -7,6 +7,7 @@ from asyncpg import Connection
 from telethon import TelegramClient
 
 from src.common.agent_client import AgentClient
+from src.common.types import EntityType
 from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
 
@@ -80,7 +81,7 @@ Scoring guidelines:
 
 class GroupInfoUpdater(ProcessorBase):
     def __init__(self, client: TelegramClient, pg_conn: Connection):
-        super().__init__(interval=24 * 3600 * 3600)
+        super().__init__(interval=3 * 3600)
         self.client = client
         self.pg_conn = pg_conn
         self.ai_agent = AgentClient()
@@ -98,13 +99,14 @@ class GroupInfoUpdater(ProcessorBase):
 
             chat_info = chat_info_map.get(chat_id, {})
             # 2. Extract and update entity information
-            logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
             entity = chat_info.get("entity", None)
             if not self._is_valid_entity(entity):
+                logger.info(f"extracting entity for group {chat_id}: {dialog.name}")
                 new_entity = await self._extract_and_update_entity(dialog, entity)
                 entity = entity.update(new_entity or {}) if entity else new_entity
 
             # 3. Evaluate chat quality
+            logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
             quality_report = await self._evaluate_chat_quality(chat_id)
             quality_reports = json.loads(chat_info.get("quality_reports", "[]"))
             if quality_report:
@@ -155,9 +157,12 @@ class GroupInfoUpdater(ProcessorBase):
             return False
         if isinstance(entity, str):
             entity = json.loads(entity)
-        if entity.get("type") == "unknown":
+        entity_type = entity.get("type", None)
+        if entity_type is None:
             return False
-        if entity.get("type") == "memecoin":
+        if entity_type == EntityType.UNKNOWN.value:
+            return False
+        if entity_type == EntityType.MEMECOIN.value:
             # if entity is memecoin, it must have name and twitter
             return entity.get("name") and entity.get("twitter")
         return True
