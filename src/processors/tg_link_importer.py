@@ -9,6 +9,7 @@ import asyncpg
 import cloudscraper
 from cloudscraper.exceptions import CloudflareChallengeError
 
+from src.common.config import DATABASE_URL
 from src.common.types import MemeCoinEntity, MemeCoinEntityMetadata, TgLinkStatus
 from src.processors.processor import ProcessorBase
 
@@ -108,9 +109,8 @@ async def import_gmgn_24h_ranked_groups():
 
 
 class TgLinkImporter(ProcessorBase):
-    def __init__(self, pg_conn: asyncpg.Connection):
+    def __init__(self):
         super().__init__(interval=300)
-        self.pg_conn = pg_conn
         self.scraper = None
         self.max_retries = 3
         self.user_agents = [
@@ -120,6 +120,7 @@ class TgLinkImporter(ProcessorBase):
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
         ]
+        self.pg_conn = None
 
     def _create_scraper(self):
         scraper = cloudscraper.create_scraper(
@@ -191,6 +192,9 @@ class TgLinkImporter(ProcessorBase):
 
     async def process(self):
         """Main processing logic"""
+        if not self.pg_conn:
+            self.pg_conn = await asyncpg.connect(DATABASE_URL)
+
         entities = []
 
         for chain in ["sol", "base"]:

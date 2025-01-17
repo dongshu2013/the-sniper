@@ -1,9 +1,6 @@
 import asyncio
 import logging
 
-import asyncpg
-
-from src.common.config import DATABASE_URL
 from src.processors.msg_queue_processor import MessageQueueProcessor
 from src.processors.tg_link_importer import TgLinkImporter
 
@@ -16,10 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 async def run():
-    pg_conn = await asyncpg.connect(DATABASE_URL)
 
-    tg_link_importer = TgLinkImporter(pg_conn)
-    msg_queue_processor = MessageQueueProcessor(pg_conn)
+    tg_link_importer = TgLinkImporter()
+    msg_queue_processor = MessageQueueProcessor()
 
     try:
         await asyncio.gather(

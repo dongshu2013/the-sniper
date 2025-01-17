@@ -6,7 +6,7 @@ import asyncpg
 from pydantic import ValidationError
 from redis.asyncio import Redis
 
-from src.common.config import MESSAGE_QUEUE_KEY
+from src.common.config import DATABASE_URL, MESSAGE_QUEUE_KEY, REDIS_URL
 from src.common.types import ChatMessage
 from src.processors.processor import ProcessorBase
 
@@ -20,16 +20,17 @@ logger = logging.getLogger(__name__)
 class MessageQueueProcessor(ProcessorBase):
     def __init__(
         self,
-        redis_client: Redis,
-        pg_conn: asyncpg.Connection,
         batch_size: int = 100,
     ):
         super().__init__(interval=1)
-        self.redis_client = redis_client
-        self.pg_conn = pg_conn
         self.batch_size = batch_size
+        self.redis_client = Redis.from_url(REDIS_URL)
+        self.pg_conn = None
 
     async def process(self) -> int:
+        if not self.pg_conn:
+            self.pg_conn = await asyncpg.connect(DATABASE_URL)
+
         messages: List[Dict] = []
 
         # Get batch of messages from Redis in a single operation
