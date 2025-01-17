@@ -1,8 +1,9 @@
 import logging
+import time
 
 import asyncpg
 
-from src.common.account import heartbeat
+from src.common.account import heartbeat, upload_session_file
 from src.common.config import DATABASE_URL
 from src.common.types import Account
 from src.processors.processor import ProcessorBase
@@ -23,6 +24,7 @@ class AccountHeartbeatProcessor(ProcessorBase):
         super().__init__(interval=interval)
         self.pg_conn = None
         self.accounts = accounts
+        self.session_upload_at = int(time.time()) + 600
 
     async def process(self) -> int:
         if not self.pg_conn:
@@ -30,3 +32,6 @@ class AccountHeartbeatProcessor(ProcessorBase):
 
         for account in self.accounts:
             await heartbeat(self.pg_conn, account)
+            if int(time.time()) > self.session_upload_at:
+                await upload_session_file(account.tg_id)
+                self.session_upload_at = int(time.time()) + 600
