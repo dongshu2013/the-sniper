@@ -211,12 +211,7 @@ class TgLinkImporter(ProcessorBase):
                         )
                     )
             else:
-                # If API fetch fails, try getting from local file
-                logger.info(f"Falling back to local file for chain {chain}")
-                async for entity in import_gmgn_24h_ranked_groups():
-                    if entity.reference.startswith(f"{chain}:"):
-                        entities.append(entity)
-
+                logger.error(f"Failed to fetch data for chain {chain}")
             await asyncio.sleep(10)  # Add delay between processing different chains
 
         if not entities:
