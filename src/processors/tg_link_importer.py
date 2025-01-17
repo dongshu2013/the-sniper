@@ -113,19 +113,25 @@ class TgLinkImporter(ProcessorBase):
         self.scraper = None
         self.max_retries = 3
         self.user_agents = [
-            # flake8 noqa: E501
-            # format: off
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            # format: on
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
         ]
 
     def _create_scraper(self) -> cloudscraper.CloudScraper:
-        """Create a new scraper instance"""
+        """Create a new scraper instance with additional options"""
         return cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "darwin", "mobile": False},
+            browser={
+                "browser": "chrome",
+                "platform": "darwin",
+                "mobile": False,
+            },
             delay=10,
+            interpreter="nodejs",  # Try using nodejs interpreter
+            # Add cookie persistence
+            sess=cloudscraper.create_scraper().sess,
         )
 
     async def _fetch_with_retry(self, url: str, params: dict) -> Optional[dict]:
@@ -138,15 +144,20 @@ class TgLinkImporter(ProcessorBase):
             "Referer": "https://gmgn.ai/?chain=base",
             "Origin": "https://gmgn.ai",
             "User-Agent": random.choice(self.user_agents),
-            "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-            "sec-ch-ua-platform": "macOS",
+            "sec-ch-ua": '"Google Chrome";v="122", "Chromium";v="122", "Not_A Brand";v="24"',
+            "sec-ch-ua-platform": '"macOS"',
             "sec-fetch-dest": "empty",
             "sec-fetch-mode": "cors",
             "sec-fetch-site": "same-origin",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
         }
 
         for attempt in range(self.max_retries):
             try:
+                # Add exponential backoff
+                await asyncio.sleep(min(5 * (2**attempt), 30))
+
                 response = self.scraper.get(url, params=params, headers=headers)
 
                 if response.status_code == 200:
@@ -155,23 +166,24 @@ class TgLinkImporter(ProcessorBase):
                     logger.warning(
                         f"403 error on attempt {attempt + 1}, recreating scraper..."
                     )
-                    self.scraper = self._create_scraper()  # Recreate scraper
-                    await asyncio.sleep(5 * (attempt + 1))  # Incremental wait time
+                    self.scraper = self._create_scraper()
+                    # Increase wait time between retries
+                    await asyncio.sleep(10 * (attempt + 1))
                 else:
                     logger.error(f"Unexpected status code: {response.status_code}")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(10)
 
             except CloudflareChallengeError as e:
                 logger.error(
                     f"Cloudflare challenge error on attempt {attempt + 1}: {e}"
                 )
                 self.scraper = self._create_scraper()
-                await asyncio.sleep(5 * (attempt + 1))
+                await asyncio.sleep(10 * (attempt + 1))
             except Exception as e:
                 logger.error(
                     f"Unexpected error on attempt {attempt + 1}: {e}", exc_info=True
                 )
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
 
         return None
 
