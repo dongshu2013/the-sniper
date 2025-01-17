@@ -5,13 +5,13 @@ import asyncpg
 import boto3
 from botocore.config import Config
 
+from src.common.config import (
+    R2_ACCESS_KEY_ID,
+    R2_BUCKET_NAME,
+    R2_ENDPOINT,
+    R2_SECRET_ACCESS_KEY,
+)
 from src.common.types import Account, AccountStatus
-
-R2_ENDPOINT = f"https://{os.environ.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com"
-R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "the-sniper")
-R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
-R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
-
 
 # Create the client
 s3 = boto3.client(

@@ -15,6 +15,11 @@ MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
 SERVICE_PREFIX = "the_sinper_bot"
 MESSAGE_QUEUE_KEY = f"{SERVICE_PREFIX}:message_queue"
 
+R2_ENDPOINT = f"https://{os.environ.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com"
+R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "the-sniper")
+R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
+
 
 def chat_per_hour_stats_key(chat_id: str, metric: str):
     hour = int(time.time() / 3600)
