@@ -64,7 +64,7 @@ class TgLinkPreProcessor(ProcessorBase):
                 entity = await self.client.get_entity(f"t.me/{path}")
         except Exception as e:
             logger.error(f"Failed to get entity from link {tme_link}: {e}")
-            return TgLinkStatus.ERROR.value, None, None
+            return TgLinkStatus.ERROR, None, None
 
         chat_id = normalize_chat_id(entity.id)
         chat_name = entity.title
@@ -76,7 +76,7 @@ class TgLinkPreProcessor(ProcessorBase):
         )
         if not is_valid:
             logger.info(f"Group {tme_link} is not a group")
-            return TgLinkStatus.IGNORED.value, chat_id, chat_name
+            return TgLinkStatus.IGNORED, chat_id, chat_name
 
         # Check if chat_id exists in chat_metadata
         exists = await self.pg_conn.fetchval(
@@ -84,5 +84,5 @@ class TgLinkPreProcessor(ProcessorBase):
         )
         if exists:
             logger.info(f"Chat {chat_id} already exists in chat_metadata")
-            return TgLinkStatus.PROCESSED.value, chat_id, chat_name
-        return TgLinkStatus.PENDING_PROCESSING.value, chat_id, chat_name
+            return TgLinkStatus.PROCESSED, chat_id, chat_name
+        return TgLinkStatus.PENDING_PROCESSING, chat_id, chat_name
