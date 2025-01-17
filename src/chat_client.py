@@ -58,6 +58,7 @@ async def run():
     for account in accounts:
         client = TelegramClient(account.session_name, account.api_id, account.api_hash)
         await client.start(phone=account.phone)
+        await register_handlers(client)
         clients.append(client)
 
     logger.info(f"Started {len(clients)} Telegram clients successfully")
