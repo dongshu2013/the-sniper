@@ -120,19 +120,8 @@ class TgLinkImporter(ProcessorBase):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
         ]
 
-    def _create_scraper(self) -> cloudscraper.CloudScraper:
-        """Create a new scraper instance with additional options"""
-        return cloudscraper.create_scraper(
-            browser={
-                "browser": "chrome",
-                "platform": "darwin",
-                "mobile": False,
-            },
-            delay=10,
-            interpreter="nodejs",  # Try using nodejs interpreter
-            # Add cookie persistence
-            sess=cloudscraper.create_scraper().sess,
-        )
+    def _create_scraper(self):
+        return cloudscraper.create_scraper()
 
     async def _fetch_with_retry(self, url: str, params: dict) -> Optional[dict]:
         """Fetch data with retry mechanism"""
