@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class TgLinkPreProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient, pg_conn: asyncpg.Connection):
-        super().__init__(interval=30)
+        super().__init__(interval=10)
         self.client = client
         self.pg_conn = pg_conn
 
@@ -29,7 +29,9 @@ class TgLinkPreProcessor(ProcessorBase):
             ORDER BY created_at ASC
             LIMIT 1
         """
-        item = await self.pg_conn.fetchrow(select_query, TgLinkStatus.PENDING_PRE_PROCESSING.value)
+        item = await self.pg_conn.fetchrow(
+            select_query, TgLinkStatus.PENDING_PRE_PROCESSING.value
+        )
         if not item:
             return
 
@@ -41,9 +43,12 @@ class TgLinkPreProcessor(ProcessorBase):
         logger.info(f"Processing group: {tg_link}")
         status, chat_id, chat_name = await self.get_chat_id_from_link(tg_link)
         await self.pg_conn.execute(
-            """UPDATE tg_link_status
-            SET status = $1, chat_id = $2, chat_name = $3, processed_at = CURRENT_TIMESTAMP
-            WHERE id = $4""",
+            """
+            UPDATE tg_link_status
+            SET status = $1,chat_id = $2, chat_name = $3,
+            processed_at = CURRENT_TIMESTAMP
+            WHERE id = $4
+            """,
             status.value,
             chat_id,
             chat_name,
@@ -76,4 +81,11 @@ class TgLinkPreProcessor(ProcessorBase):
             logger.info(f"Group {tme_link} is not a group")
             return TgLinkStatus.IGNORED.value, chat_id, chat_name
 
+        # Check if chat_id exists in chat_metadata
+        exists = await self.pg_conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM chat_metadata WHERE chat_id = $1)", chat_id
+        )
+        if exists:
+            logger.info(f"Chat {chat_id} already exists in chat_metadata")
+            return TgLinkStatus.PROCESSED.value, chat_id, chat_name
         return TgLinkStatus.PENDING_PROCESSING.value, chat_id, chat_name
