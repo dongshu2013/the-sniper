@@ -175,3 +175,6 @@ cython_debug/
 
 # ChatGPT Driven Development Record
 CDDR*.md
+
+# Config
+config/config.yaml

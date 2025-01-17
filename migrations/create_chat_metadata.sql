@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS chat_metadata (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) UNIQUE NOT NULL,
+    chat_photo_url TEXT DEFAULT '',
     name VARCHAR(255) DEFAULT '',
     about TEXT DEFAULT '',
     username VARCHAR(255) DEFAULT '',

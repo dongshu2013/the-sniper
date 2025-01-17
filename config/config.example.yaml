@@ -1,0 +1,27 @@
+telegram_accounts:
+  - session_name: "account1"
+    api_id: "your_api_id_1"
+    api_hash: "your_api_hash_1"
+    phone: "+1234567890"
+
+  - session_name: "account2"
+    api_id: "your_api_id_2"
+    api_hash: "your_api_hash_2"
+    phone: "+0987654321"
+
+twitter_accounts:
+  - username: "your_twitter_username_1"
+    consumer_key: "your_consumer_key_1"
+    consumer_secret: "your_consumer_secret_1"
+    access_token: "your_access_token_1"
+    access_token_secret: "your_access_token_secret_1"
+
+  - username: "your_twitter_username_2"
+    consumer_key: "your_consumer_key_2"
+    consumer_secret: "your_consumer_secret_2"
+    access_token: "your_access_token_2"
+    access_token_secret: "your_access_token_secret_2"
+
+logging:
+  level: "INFO"
+  file: "logs/app.log"
