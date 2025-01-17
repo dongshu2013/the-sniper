@@ -87,7 +87,7 @@ Scoring guidelines:
 # format: on
 
 
-class GroupInfoUpdater(ProcessorBase):
+class GroupProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient, pg_conn: Connection):
         super().__init__(interval=3 * 3600)
         self.client = client

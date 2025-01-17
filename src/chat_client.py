@@ -14,7 +14,7 @@ from src.common.config import (
     message_seen_key,
 )
 from src.common.types import ChatMessage
-from src.processors.group_info_updater import GroupInfoUpdater
+from src.processors.group_processor import GroupProcessor
 from src.processors.tg_link_processor import TgLinkProcessor
 
 # Create logger instance
@@ -35,13 +35,13 @@ async def run():
     #    await register_handlers(listner.client)
 
     tg_link_processor = TgLinkProcessor(listner.client, pg_conn)
-    grp_info_updater = GroupInfoUpdater(listner.client, pg_conn)
+    grp_processor = GroupProcessor(listner.client, pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
             tg_link_processor.start_processing(),
-            grp_info_updater.start_processing(),
+            grp_processor.start_processing(),
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
