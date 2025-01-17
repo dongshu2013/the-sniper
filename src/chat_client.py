@@ -1,14 +1,13 @@
 import asyncio
 import logging
-from typing import List
 
 import asyncpg
-import yaml
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
 from src.common.account import download_session_file, load_accounts, upload_session_file
 from src.common.config import (
+    ACCOUNT_IDS,
     DATABASE_URL,
     MESSAGE_QUEUE_KEY,
     REDIS_URL,
@@ -30,21 +29,15 @@ logger = logging.getLogger(__name__)
 redis_client = Redis.from_url(REDIS_URL)
 
 
-def load_telegram_configs(config_path: str) -> List[str]:
-    with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
-    return config_data["telegram_accounts"]
-
-
 async def run():
     # Load configs and create clients
     pg_conn = await asyncpg.connect(DATABASE_URL)
-    accounts = load_telegram_configs("config/config.yaml")
-    accounts = await init_accounts(pg_conn, accounts)
-    if not accounts:
-        logger.error("No valid accounts found")
+    account_ids = ACCOUNT_IDS
+    if not account_ids:
+        logger.error("No account ids found")
         return
 
+    accounts = await init_accounts(pg_conn, account_ids)
     heartbeat_processor = AccountHeartbeatProcessor(accounts)
     tg_link_processors = [TgLinkPreProcessor(account.client) for account in accounts]
     group_processors = [GroupProcessor(account.client) for account in accounts]
