@@ -36,9 +36,6 @@ class TgLinkPreProcessor(ProcessorBase):
             return
 
         tg_link = item["tg_link"].strip()
-        if item["status"] is not None:
-            logger.info(f"Group {tg_link} already processed")
-            return
 
         logger.info(f"Processing group: {tg_link}")
         status, chat_id, chat_name = await self.get_chat_id_from_link(tg_link)

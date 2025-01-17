@@ -280,7 +280,7 @@ class GroupProcessor(ProcessorBase):
                     sender_id = sender.id if sender else "Unknown"
                     message_texts.append(f"[{msg.date}] {sender_id}: {msg.text}")
 
-            messages_text = "\n".join(message_texts)[:18000]  # limit buffer
+            messages_text = "\n".join(message_texts)[:16000]  # limit buffer
 
             # Use AI to evaluate quality
             response = await self.ai_agent.chat_completion(
