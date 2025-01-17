@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS account (
+CREATE TABLE IF NOT EXISTS accounts (
     id SERIAL PRIMARY KEY,
     username VARCHAR(255) NOT NULL,
     session_file TEXT NOT NULL,
@@ -11,6 +11,6 @@ CREATE TABLE IF NOT EXISTS account (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_account_username ON account(username);
-CREATE INDEX idx_account_status ON account(status);
-CREATE INDEX idx_account_last_active_at ON account(last_active_at);
+CREATE INDEX idx_accounts_username ON accounts(username);
+CREATE INDEX idx_accounts_status ON accounts(status);
+CREATE INDEX idx_accounts_last_active_at ON accounts(last_active_at);

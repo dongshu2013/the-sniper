@@ -178,3 +178,6 @@ CDDR*.md
 
 # Config
 config/config.yaml
+
+# Sessions
+sessions/

@@ -2,6 +2,7 @@ from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel
+from telethon import TelegramClient
 
 
 class AccountStatus(Enum):
@@ -65,3 +66,13 @@ class ChatMessage(BaseModel):
     message_text: str
     sender_id: str
     message_timestamp: int
+
+
+class Account(BaseModel):
+    id: int
+    api_id: str
+    api_hash: str
+    phone: str
+    status: AccountStatus
+    last_active_at: int
+    client: Optional[TelegramClient]

@@ -2,17 +2,21 @@ import asyncio
 import logging
 from typing import List
 
+import asyncpg
 import yaml
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
+from src.common.account import download_session_file, load_accounts, upload_session_file
 from src.common.config import (
+    DATABASE_URL,
     MESSAGE_QUEUE_KEY,
     REDIS_URL,
     chat_per_hour_stats_key,
     message_seen_key,
 )
 from src.common.types import ChatMessage
+from src.processors.account_heartbeat_processor import AccountHeartbeatProcessor
 from src.processors.group_processor import GroupProcessor
 from src.processors.tg_link_pre_processor import TgLinkPreProcessor
 
@@ -53,37 +57,50 @@ def load_telegram_configs(config_path: str) -> List[TelegramAccountConfig]:
 
 async def run():
     # Load configs and create clients
+    pg_conn = await asyncpg.connect(DATABASE_URL)
     accounts = load_telegram_configs("config/config.yaml")
-    clients = []
-    for account in accounts:
-        client = TelegramClient(account.session_name, account.api_id, account.api_hash)
-        await client.start(phone=account.phone)
-        await register_handlers(client)
-        clients.append(client)
-
-    logger.info(f"Started {len(clients)} Telegram clients successfully")
-
-    tg_link_processors = [TgLinkPreProcessor(client) for client in clients]
-    group_processors = [GroupProcessor(client) for client in clients]
+    accounts = await init_accounts(pg_conn, accounts)
+    heartbeat_processor = AccountHeartbeatProcessor(accounts)
+    tg_link_processors = [TgLinkPreProcessor(account.client) for account in accounts]
+    group_processors = [GroupProcessor(account.client) for account in accounts]
 
     try:
-        client_tasks = [client.run_until_disconnected() for client in clients]
+        client_tasks = [account.client.run_until_disconnected() for account in accounts]
+        heartbeat_processor_task = heartbeat_processor.start_processing()
         tg_link_processor_tasks = [
             tg_proc.start_processing() for tg_proc in tg_link_processors
         ]
         group_processor_tasks = [
             grp_proc.start_processing() for grp_proc in group_processors
         ]
-
         await asyncio.gather(
             *client_tasks,
+            heartbeat_processor_task,
             *tg_link_processor_tasks,
             *group_processor_tasks,
         )
     except KeyboardInterrupt:
         logger.info("Shutting down...")
-        for client in clients:
-            await client.disconnect()
+        for account in accounts:
+            logger.info(f"Uploading session file for account {account.id}")
+            await upload_session_file(account.id)
+            await account.client.disconnect()
+
+
+async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
+    accounts = await load_accounts(pg_conn, account_ids)
+    for account in accounts:
+        logger.info(f"Downloading session file for account {account.id}")
+        session_file = await download_session_file(account.id)
+        if not session_file:
+            logger.error(f"Failed to download session file for account {account.id}")
+            continue
+        client = TelegramClient(session_file, account.api_id, account.api_hash)
+        await client.start(phone=account.phone)
+        await register_handlers(client)
+        logger.info(f"Started Telegram client for account {account.id}")
+        account.client = client
+    return accounts
 
 
 async def register_handlers(client: TelegramClient):
