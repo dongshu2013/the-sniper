@@ -137,8 +137,8 @@ class GroupProcessor(ProcessorBase):
                 new_entity = await self._extract_and_update_entity(
                     dialog, entity, description
                 )
+                logger.info(f"extracted entity for group {dialog.name}: {new_entity}")
                 entity = entity.update(new_entity or {}) if entity else new_entity
-                logger.info(f"extracted entity for group {dialog.name}: {entity}")
 
             # 3. Evaluate chat quality
             logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
@@ -152,16 +152,22 @@ class GroupProcessor(ProcessorBase):
                     quality_reports.append(new_report)
                     # only keep the latest 5 reports
                     if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
-                        quality_reports = quality_reports[-5:]
+                        quality_reports = quality_reports[-MAX_QUALITY_REPORTS_COUNT:]
                     if len(quality_reports) == MAX_QUALITY_REPORTS_COUNT:
-                        average_score = sum(
-                            report["score"] for report in quality_reports
-                        ) / len(quality_reports)
-                        lastest_score = quality_reports[-1]["score"]
+                        scores = [
+                            report.get("score", None) for report in quality_reports
+                        ]
+                        scores = [score for score in scores if score is not None]
+                        if len(scores) != len(quality_reports):
+                            logger.error(
+                                f"scores length mismatch {chat_id}: {quality_reports}"
+                            )
+                        average_score = sum(scores) / len(scores)
+                        latest_score = quality_reports[-1]["score"]
                         status = (
                             ChatStatus.LOW_QUALITY.value
                             if average_score < LOW_QUALITY_THRESHOLD
-                            and lastest_score < LOW_QUALITY_THRESHOLD
+                            and latest_score < LOW_QUALITY_THRESHOLD
                             else ChatStatus.ACTIVE.value
                         )
 
@@ -328,7 +334,7 @@ class GroupProcessor(ProcessorBase):
             )
             return None
 
-    async def _evaluate_chat_quality(self, dialog: any) -> Optional[Tuple[float, str]]:
+    async def _evaluate_chat_quality(self, dialog: any) -> Optional[dict]:
         """Evaluate chat quality based on recent messages."""
         try:
             messages = await self.client.get_messages(

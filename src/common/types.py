@@ -4,6 +4,12 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class AccountStatus(Enum):
+    ACTIVE = "active"
+    BANNED = "banned"
+    SUSPENDED = "suspended"
+
+
 class EntityType(Enum):
     MEMECOIN = "memecoin"
     TWITTER_KOL = "twitter_kol"
