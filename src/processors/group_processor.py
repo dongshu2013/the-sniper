@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Optional, Tuple
 
+import asyncpg
 from asyncpg import Connection
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetFullChannelRequest
@@ -10,6 +11,7 @@ from telethon.tl.functions.messages import GetFullChatRequest
 from telethon.tl.types import InputMessagesFilterPinned
 
 from src.common.agent_client import AgentClient
+from src.common.config import DATABASE_URL
 from src.common.types import EntityType
 from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
@@ -88,13 +90,16 @@ Scoring guidelines:
 
 
 class GroupProcessor(ProcessorBase):
-    def __init__(self, client: TelegramClient, pg_conn: Connection):
+    def __init__(self, client: TelegramClient):
         super().__init__(interval=3 * 3600)
         self.client = client
-        self.pg_conn = pg_conn
+        self.pg_conn = None
         self.ai_agent = AgentClient()
 
     async def process(self):
+        if not self.pg_conn:
+            self.pg_conn = await asyncpg.connect(DATABASE_URL)
+
         dialogs = await self.get_all_dialogs()
         chat_ids = [normalize_chat_id(dialog.id) for dialog in dialogs]
         chat_info_map = await self.get_all_chat_metadata(chat_ids)

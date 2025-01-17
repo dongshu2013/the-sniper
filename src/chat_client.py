@@ -2,13 +2,11 @@ import asyncio
 import logging
 from typing import List
 
-import asyncpg
 import yaml
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
 
 from src.common.config import (
-    DATABASE_URL,
     MESSAGE_QUEUE_KEY,
     REDIS_URL,
     chat_per_hour_stats_key,
@@ -54,8 +52,6 @@ def load_telegram_configs(config_path: str) -> List[TelegramAccountConfig]:
 
 
 async def run():
-    pg_conn = await asyncpg.connect(DATABASE_URL)
-
     # Load configs and create clients
     accounts = load_telegram_configs("config/config.yaml")
     clients = []
@@ -66,8 +62,8 @@ async def run():
 
     logger.info(f"Started {len(clients)} Telegram clients successfully")
 
-    tg_link_processor = TgLinkPreProcessor(clients[0], pg_conn)
-    group_processors = [GroupProcessor(clients[0], pg_conn) for client in clients]
+    tg_link_processor = TgLinkPreProcessor(clients[0])
+    group_processors = [GroupProcessor(clients[0]) for client in clients]
 
     try:
         client_tasks = [client.run_until_disconnected() for client in clients]

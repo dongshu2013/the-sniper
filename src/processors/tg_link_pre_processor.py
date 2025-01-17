@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 import asyncpg
 from telethon import TelegramClient
 
+from src.common.config import DATABASE_URL
 from src.common.types import TgLinkStatus
 from src.common.utils import normalize_chat_id
 from src.processors.processor import ProcessorBase
@@ -16,12 +17,15 @@ logger = logging.getLogger(__name__)
 
 
 class TgLinkPreProcessor(ProcessorBase):
-    def __init__(self, client: TelegramClient, pg_conn: asyncpg.Connection):
+    def __init__(self, client: TelegramClient):
         super().__init__(interval=10)
         self.client = client
-        self.pg_conn = pg_conn
+        self.pg_conn = None
 
     async def process(self):
+        if not self.pg_conn:
+            self.pg_conn = await asyncpg.connect(DATABASE_URL)
+
         select_query = """
             SELECT id, tg_link, status
             FROM tg_link_status
