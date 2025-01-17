@@ -2,18 +2,19 @@ import os
 
 import asyncpg
 import boto3
-from botocore.config import Config
 
 from src.common.types import Account
 
-# Initialize S3 client for R2
-BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "the-sniper")
+R2_ENDPOINT = f"https://{os.environ.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com"
+R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "the-sniper")
+R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
 s3 = boto3.client(
-    "s3",
-    endpoint_url=os.environ.get("R2_ENDPOINT"),
-    aws_access_key_id=os.environ.get("R2_ACCESS_KEY_ID"),
-    aws_secret_access_key=os.environ.get("R2_SECRET_ACCESS_KEY"),
-    config=Config(signature_version="s3v4"),
+    service_name="s3",
+    endpoint_url=R2_ENDPOINT,
+    aws_access_key_id=R2_ACCESS_KEY_ID,
+    aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+    region_name="auto",
 )
 
 
@@ -32,7 +33,7 @@ async def load_accounts(
 
 
 def gen_session_file_key(account_id: int):
-    return f"the-sniper/sessions/{account_id}.session"
+    return f"the-sniper/tg-user-sessions/{account_id}.session"
 
 
 def gen_session_file_path(account_id: int):
@@ -48,7 +49,7 @@ async def download_session_file(account_id: int):
         os.remove(local_path)
 
     try:
-        s3.download_file(BUCKET_NAME, session_key, local_path)
+        s3.download_file(R2_BUCKET_NAME, session_key, local_path)
     except Exception as e:
         print(f"Error downloading session file: {e}")
         return None
@@ -59,7 +60,7 @@ async def download_session_file(account_id: int):
 async def upload_session_file(account_id: int):
     session_key = gen_session_file_key(account_id)
     session_file = gen_session_file_path(account_id)
-    s3.upload_file(BUCKET_NAME, session_key, session_file)
+    s3.upload_file(R2_BUCKET_NAME, session_key, session_file)
 
 
 async def heartbeat(pg_conn: asyncpg.Connection, account: Account):

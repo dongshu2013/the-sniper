@@ -83,8 +83,8 @@ async def run():
         logger.info("Shutting down...")
         for account in accounts:
             logger.info(f"Uploading session file for account {account.id}")
-            await upload_session_file(account.id)
             await account.client.disconnect()
+            await upload_session_file(account.id)
 
 
 async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
@@ -103,7 +103,21 @@ async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
     return accounts
 
 
-async def register_handlers(client: TelegramClient):
+async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient):
+    me = await client.get_me()
+    logger.info(f"Updating account metadata for {me.id}")
+    await pg_conn.execute(
+        """
+        UPDATE accounts
+        SET username = $1, fullname = $2, last_active_at = CURRENT_TIMESTAMP
+        WHERE tg_id = $3
+        """,
+        me.username,
+        me.first_name + f" {me.last_name}" if me.last_name else me.first_name,
+        me.id,
+    )
+
+    logger.info(f"Registering handlers for account {me.id}")
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
