@@ -19,8 +19,15 @@ class TgLinkStatus(Enum):
 
 
 class AccountChatStatus(Enum):
-    JOINED = "watching"
+    WATCHING = "watching"
     QUIT = "quit"
+
+
+class ChatStatus(Enum):
+    EVALUATING = "evaluating"
+    ACTIVE = "active"
+    LOW_QUALITY = "low_quality"
+    BLOCKED = "blocked"
 
 
 class MemeCoinEntityMetadata(BaseModel):

@@ -12,7 +12,7 @@ from telethon.tl.types import InputMessagesFilterPinned
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL
-from src.common.types import EntityType
+from src.common.types import ChatStatus, EntityType
 from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Constants
 MIN_MESSAGES_THRESHOLD = 10
 INACTIVE_HOURS_THRESHOLD = 24
-LOW_QUALITY_THRESHOLD = 3.0
+LOW_QUALITY_THRESHOLD = 5.0
 
 MAX_QUALITY_REPORTS_COUNT = 5
 
@@ -105,11 +105,28 @@ class GroupProcessor(ProcessorBase):
         chat_info_map = await self.get_all_chat_metadata(chat_ids)
         logger.info(f"loaded {len(chat_info_map)} group metadata")
 
+        # update account chat map
+        me = await self.client.get_me()
+        logger.info(f"updating account chat map for {me.id}")
+        await self.update_account_chat_map(me.id, chat_ids)
+        logger.info(f"updated account chat map for {me.id}")
+
+        logger.info(f"updating {len(chat_ids)} groups")
         for chat_id, dialog in zip(chat_ids, dialogs):
             if not dialog.is_group and not dialog.is_channel:
                 continue
 
+            logger.info(f"processing group {dialog.name}")
+
             chat_info = chat_info_map.get(chat_id, {})
+            status = chat_info.get("status", ChatStatus.EVALUATING.value)
+
+            if (
+                status == ChatStatus.BLOCKED.value
+                or status == ChatStatus.LOW_QUALITY.value
+            ):
+                logger.info(f"skipping blocked or low quality group {dialog.name}")
+                continue
 
             # 1. Get group description
             description = await self.get_group_description(dialog)
@@ -126,13 +143,28 @@ class GroupProcessor(ProcessorBase):
 
             # 3. Evaluate chat quality
             logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
-            quality_report = await self._evaluate_chat_quality(dialog)
-            quality_reports = json.loads(chat_info.get("quality_reports", "[]"))
-            if quality_report:
-                quality_reports.append(quality_report)
-            # only keep the latest 5 reports
-            if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
-                quality_reports = quality_reports[-5:]
+            quality_reports, should_evaluate = self.should_evaluate(
+                status, chat_info.get("quality_reports", "[]")
+            )
+            if should_evaluate:
+                quality_reports = quality_reports or []
+                new_report = await self._evaluate_chat_quality(dialog)
+                if new_report:
+                    quality_reports.append(new_report)
+                    # only keep the latest 5 reports
+                    if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
+                        quality_reports = quality_reports[-5:]
+                    if len(quality_reports) == MAX_QUALITY_REPORTS_COUNT:
+                        average_score = sum(
+                            report["score"] for report in quality_reports
+                        ) / len(quality_reports)
+                        lastest_score = quality_reports[-1]["score"]
+                        status = (
+                            ChatStatus.LOW_QUALITY.value
+                            if average_score < LOW_QUALITY_THRESHOLD
+                            and lastest_score < LOW_QUALITY_THRESHOLD
+                            else ChatStatus.ACTIVE.value
+                        )
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
@@ -144,8 +176,36 @@ class GroupProcessor(ProcessorBase):
                     getattr(dialog.entity, "participants_count", 0),
                     json.dumps(entity) if entity else None,
                     json.dumps(quality_reports),
+                    status,
                 )
             )
+
+    def should_evaluate(
+        self, status: str, quality_reports: str
+    ) -> Tuple[Optional[list[dict]], bool]:
+        if status == ChatStatus.BLOCKED.value or status == ChatStatus.LOW_QUALITY.value:
+            return None, False
+
+        try:
+            quality_reports = json.loads(quality_reports)
+            if not quality_reports:
+                return [], True
+
+            if status == ChatStatus.EVALUATING.value:
+                return quality_reports, True
+            elif status == ChatStatus.ACTIVE.value:
+                latest_evaluation = quality_reports[-1]["processed_at"]
+                should_evaluate = (
+                    int(latest_evaluation)
+                    < int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600
+                )
+                return quality_reports, should_evaluate
+            else:
+                logger.error(f"invalid chat status: {status}")
+                return quality_reports, True
+        except Exception as e:
+            logger.error(f"Failed to parse quality reports: {e}")
+            return [], True
 
     async def get_group_description(self, dialog: any) -> Optional[str]:
         if dialog.is_channel:
@@ -165,11 +225,15 @@ class GroupProcessor(ProcessorBase):
 
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
-            "SELECT chat_id, entity, quality_reports FROM chat_metadata WHERE chat_id = ANY($1)",
+            """
+            SELECT chat_id, status, entity, quality_reports
+            FROM chat_metadata WHERE chat_id = ANY($1)
+            """,
             chat_ids,
         )
         return {
             row["chat_id"]: {
+                "status": row["status"],
                 "entity": row["entity"],
                 "quality_reports": row["quality_reports"],
             }
@@ -319,12 +383,13 @@ class GroupProcessor(ProcessorBase):
                 participants_count,
                 entity,
                 quality_reports,
+                status,
             ) = update
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, about, username, participants_count, entity, quality_reports, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+                    chat_id, name, about, username, participants_count, entity, quality_reports, status, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     about = EXCLUDED.about,
@@ -332,7 +397,8 @@ class GroupProcessor(ProcessorBase):
                     participants_count = EXCLUDED.participants_count,
                     updated_at = CURRENT_TIMESTAMP,
                     entity = EXCLUDED.entity,
-                    quality_reports = EXCLUDED.quality_reports
+                    quality_reports = EXCLUDED.quality_reports,
+                    status = EXCLUDED.status
                 """,
                 chat_id,
                 name,
@@ -341,6 +407,27 @@ class GroupProcessor(ProcessorBase):
                 participants_count,
                 entity,
                 quality_reports,
+                status,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
+
+    async def update_account_chat_map(self, account_id: int, chat_ids: list[str]):
+        await self.pg_conn.execute(
+            """
+            INSERT INTO account_chat (account_id, chat_id, status) VALUES ($1, $2, $3)
+            ON CONFLICT (account_id, chat_id) DO UPDATE SET status = $3
+            """,
+            account_id,
+            chat_ids,
+            ChatStatus.WATCHING.value,
+        )
+        # filter out the chat_ids not in the list with the account_id and mark it as quit
+        await self.pg_conn.execute(
+            """
+            UPDATE account_chat SET status = $1 WHERE account_id = $2 AND chat_id NOT IN ($3)
+            """,
+            ChatStatus.QUIT.value,
+            account_id,
+            chat_ids,
+        )
