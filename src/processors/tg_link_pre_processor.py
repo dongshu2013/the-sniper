@@ -67,7 +67,7 @@ class TgLinkPreProcessor(ProcessorBase):
             return TgLinkStatus.ERROR, None, None
 
         chat_id = normalize_chat_id(entity.id)
-        chat_name = entity.title
+        chat_name = getattr(entity, "title", "")
         logger.info(f"Fetched entity: {entity}")
         is_valid = (
             hasattr(entity, "broadcast")  # channels
