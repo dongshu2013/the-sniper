@@ -15,7 +15,7 @@ from src.common.config import (
 )
 from src.common.types import ChatMessage
 from src.processors.group_processor import GroupProcessor
-from src.processors.tg_link_processor import TgLinkProcessor
+from src.processors.tg_link_pre_processor import TgLinkPreProcessor
 
 # Create logger instance
 logging.basicConfig(
@@ -34,13 +34,13 @@ async def run():
     logger.info("Telegram bot started successfully")
     #    await register_handlers(listner.client)
 
-    tg_link_processor = TgLinkProcessor(listner.client, pg_conn)
+    tg_link_pre_processor = TgLinkPreProcessor(listner.client, pg_conn)
     grp_processor = GroupProcessor(listner.client, pg_conn)
 
     try:
         await asyncio.gather(
             listner.client.run_until_disconnected(),
-            tg_link_processor.start_processing(),
+            tg_link_pre_processor.start_processing(),
             grp_processor.start_processing(),
         )
     except KeyboardInterrupt:

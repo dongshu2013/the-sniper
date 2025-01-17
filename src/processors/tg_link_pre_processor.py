@@ -15,7 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class TgLinkProcessor(ProcessorBase):
+class TgLinkPreProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient, pg_conn: asyncpg.Connection):
         super().__init__(interval=30)
         self.client = client
