@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 import asyncpg
 from redis.asyncio import Redis
@@ -7,7 +8,6 @@ from telethon import TelegramClient, events
 
 from src.common.account import download_session_file, load_accounts, upload_session_file
 from src.common.config import (
-    ACCOUNT_IDS,
     DATABASE_URL,
     MESSAGE_QUEUE_KEY,
     REDIS_URL,
@@ -32,7 +32,7 @@ redis_client = Redis.from_url(REDIS_URL)
 async def run():
     # Load configs and create clients
     pg_conn = await asyncpg.connect(DATABASE_URL)
-    account_ids = ACCOUNT_IDS
+    account_ids = os.getenv("ACCOUNT_IDS").split(",")
     if not account_ids:
         logger.error("No account ids found")
         return
