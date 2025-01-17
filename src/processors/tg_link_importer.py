@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import random
 from typing import Optional
 
@@ -121,7 +122,15 @@ class TgLinkImporter(ProcessorBase):
         ]
 
     def _create_scraper(self):
-        return cloudscraper.create_scraper()
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+        if os.getenv("PROXY_URL"):
+            scraper.proxies = {
+                "http": f"http://{os.getenv('PROXY_URL')}",
+                "https": f"http://{os.getenv('PROXY_URL')}",
+            }
+        return scraper
 
     async def _fetch_with_retry(self, url: str, params: dict) -> Optional[dict]:
         """Fetch data with retry mechanism"""
@@ -134,7 +143,7 @@ class TgLinkImporter(ProcessorBase):
             "Origin": "https://gmgn.ai",
             "User-Agent": random.choice(self.user_agents),
             "sec-ch-ua": '"Google Chrome";v="122", "Chromium";v="122", "Not_A Brand";v="24"',
-            "sec-ch-ua-platform": '"macOS"',
+            "sec-ch-ua-platform": '"Windows"',  # Changed to Windows for better acceptance
             "sec-fetch-dest": "empty",
             "sec-fetch-mode": "cors",
             "sec-fetch-site": "same-origin",
@@ -144,10 +153,15 @@ class TgLinkImporter(ProcessorBase):
 
         for attempt in range(self.max_retries):
             try:
-                # Add exponential backoff
-                await asyncio.sleep(min(5 * (2**attempt), 30))
+                # Randomize delay between attempts
+                await asyncio.sleep(random.uniform(5, 10) * (attempt + 1))
 
-                response = self.scraper.get(url, params=params, headers=headers)
+                response = self.scraper.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    timeout=30,  # Add explicit timeout
+                )
 
                 if response.status_code == 200:
                     return response.json()
@@ -156,23 +170,22 @@ class TgLinkImporter(ProcessorBase):
                         f"403 error on attempt {attempt + 1}, recreating scraper..."
                     )
                     self.scraper = self._create_scraper()
-                    # Increase wait time between retries
-                    await asyncio.sleep(10 * (attempt + 1))
+                    await asyncio.sleep(random.uniform(10, 15) * (attempt + 1))
                 else:
                     logger.error(f"Unexpected status code: {response.status_code}")
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(random.uniform(7, 12))
 
             except CloudflareChallengeError as e:
                 logger.error(
                     f"Cloudflare challenge error on attempt {attempt + 1}: {e}"
                 )
                 self.scraper = self._create_scraper()
-                await asyncio.sleep(10 * (attempt + 1))
+                await asyncio.sleep(random.uniform(10, 15) * (attempt + 1))
             except Exception as e:
                 logger.error(
                     f"Unexpected error on attempt {attempt + 1}: {e}", exc_info=True
                 )
-                await asyncio.sleep(10)
+                await asyncio.sleep(random.uniform(7, 12))
 
         return None
 
