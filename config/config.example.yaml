@@ -1,13 +1,7 @@
 telegram_accounts:
-  - session_name: "account1"
-    api_id: "your_api_id_1"
-    api_hash: "your_api_hash_1"
-    phone: "+1234567890"
-
-  - session_name: "account2"
-    api_id: "your_api_id_2"
-    api_hash: "your_api_hash_2"
-    phone: "+0987654321"
+  - "user_id_1"
+  - "user_id_2"
+  - "user_id_3"
 
 twitter_accounts:
   - username: "your_twitter_username_1"

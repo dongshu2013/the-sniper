@@ -114,7 +114,7 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
         """,
         me.username,
         me.first_name + f" {me.last_name}" if me.last_name else me.first_name,
-        me.id,
+        str(me.id),
     )
 
     logger.info(f"Registering handlers for account {me.id}")
