@@ -155,13 +155,14 @@ class GroupProcessor(ProcessorBase):
                         quality_reports = quality_reports[-MAX_QUALITY_REPORTS_COUNT:]
                     if len(quality_reports) == MAX_QUALITY_REPORTS_COUNT:
                         scores = [
-                            report.get("score", None) for report in quality_reports
+                            (
+                                0.0
+                                if isinstance(report, list)
+                                else report.get("score", None)
+                            )
+                            for report in quality_reports
                         ]
                         scores = [score for score in scores if score is not None]
-                        if len(scores) != len(quality_reports):
-                            logger.error(
-                                f"scores length mismatch {chat_id}: {quality_reports}"
-                            )
                         average_score = sum(scores) / len(scores)
                         latest_score = quality_reports[-1]["score"]
                         status = (
@@ -344,7 +345,11 @@ class GroupProcessor(ProcessorBase):
             )
 
             if len(messages) < MIN_MESSAGES_THRESHOLD:
-                return 0.0, "inactive"
+                return {
+                    "score": 0.0,
+                    "reason": "inactive",
+                    "processed_at": int(time.time()),
+                }
 
             # Prepare messages for quality analysis
             message_texts = []
