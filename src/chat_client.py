@@ -62,18 +62,21 @@ async def run():
 
     logger.info(f"Started {len(clients)} Telegram clients successfully")
 
-    tg_link_processor = TgLinkPreProcessor(clients[0])
-    group_processors = [GroupProcessor(clients[0]) for client in clients]
+    tg_link_processors = [TgLinkPreProcessor(client) for client in clients]
+    group_processors = [GroupProcessor(client) for client in clients]
 
     try:
         client_tasks = [client.run_until_disconnected() for client in clients]
+        tg_link_processor_tasks = [
+            tg_proc.start_processing() for tg_proc in tg_link_processors
+        ]
         group_processor_tasks = [
             grp_proc.start_processing() for grp_proc in group_processors
         ]
 
         await asyncio.gather(
             *client_tasks,
-            tg_link_processor.start_processing(),
+            *tg_link_processor_tasks,
             *group_processor_tasks,
         )
     except KeyboardInterrupt:
