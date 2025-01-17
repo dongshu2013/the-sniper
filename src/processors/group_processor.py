@@ -4,7 +4,6 @@ import time
 from typing import Optional, Tuple
 
 import asyncpg
-from asyncpg import Connection
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
@@ -12,7 +11,7 @@ from telethon.tl.types import InputMessagesFilterPinned
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL
-from src.common.types import ChatStatus, EntityType
+from src.common.types import AccountChatStatus, ChatStatus, EntityType
 from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
 
@@ -108,7 +107,7 @@ class GroupProcessor(ProcessorBase):
         # update account chat map
         me = await self.client.get_me()
         logger.info(f"updating account chat map for {me.id}")
-        await self.update_account_chat_map(me.id, chat_ids)
+        await self.update_account_chat_map(str(me.id), chat_ids)
         logger.info(f"updated account chat map for {me.id}")
 
         logger.info(f"updating {len(chat_ids)} groups")
@@ -412,22 +411,29 @@ class GroupProcessor(ProcessorBase):
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
 
-    async def update_account_chat_map(self, account_id: int, chat_ids: list[str]):
-        await self.pg_conn.execute(
+    async def update_account_chat_map(self, account_id: str, chat_ids: list[str]):
+        # Insert or update all chat_ids for this account
+        await self.pg_conn.executemany(
             """
-            INSERT INTO account_chat (account_id, chat_id, status) VALUES ($1, $2, $3)
+            INSERT INTO account_chat (account_id, chat_id, status)
+            VALUES ($1, $2, $3)
             ON CONFLICT (account_id, chat_id) DO UPDATE SET status = $3
             """,
-            account_id,
-            chat_ids,
-            ChatStatus.WATCHING.value,
+            [
+                (account_id, chat_id, AccountChatStatus.WATCHING.value)
+                for chat_id in chat_ids
+            ],
         )
-        # filter out the chat_ids not in the list with the account_id and mark it as quit
+
+        # Update status to QUIT for chats not in the list
         await self.pg_conn.execute(
             """
-            UPDATE account_chat SET status = $1 WHERE account_id = $2 AND chat_id NOT IN ($3)
+            UPDATE account_chat
+            SET status = $1
+            WHERE account_id = $2
+            AND chat_id != ALL($3)
             """,
-            ChatStatus.QUIT.value,
+            AccountChatStatus.QUIT.value,
             account_id,
             chat_ids,
         )
