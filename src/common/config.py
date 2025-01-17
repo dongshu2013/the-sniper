@@ -1,6 +1,10 @@
 import os
 import time
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/postgres")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
