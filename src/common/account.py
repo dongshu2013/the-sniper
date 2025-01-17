@@ -1,39 +1,68 @@
+import logging
 import os
 
 import asyncpg
 import boto3
+from botocore.config import Config
 
-from src.common.types import Account
+from src.common.types import Account, AccountStatus
 
 R2_ENDPOINT = f"https://{os.environ.get('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com"
 R2_BUCKET_NAME = os.environ.get("R2_BUCKET_NAME", "the-sniper")
 R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
+
+
+# Create the client
 s3 = boto3.client(
     service_name="s3",
     endpoint_url=R2_ENDPOINT,
     aws_access_key_id=R2_ACCESS_KEY_ID,
     aws_secret_access_key=R2_SECRET_ACCESS_KEY,
     region_name="auto",
+    config=Config(
+        s3={"addressing_style": "virtual"},
+        signature_version="s3v4",
+        retries={"max_attempts": 3},
+    ),
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def load_accounts(
     pg_conn: asyncpg.Connection, account_ids: list[int]
 ) -> list[Account]:
-    accounts = await pg_conn.fetch(
+    """Load accounts from database."""
+    rows = await pg_conn.fetch(
         """
-        SELECT id, api_id, api_hash, phone, last_active_at
+        SELECT id, tg_id, api_id, api_hash, phone, status, last_active_at
         FROM accounts
-        WHERE status = 'active' and id in ($1)
+        WHERE tg_id = ANY($1)
         """,
         account_ids,
     )
-    return [Account.model_validate(account) for account in accounts]
+    return [
+        Account(
+            id=row["id"],
+            tg_id=row["tg_id"],
+            api_id=row["api_id"],
+            api_hash=row["api_hash"],
+            phone=row["phone"],
+            status=AccountStatus(row["status"]),
+            last_active_at=(
+                int(row["last_active_at"].timestamp())
+                if row["last_active_at"]
+                else None
+            ),
+            client=None,
+        )
+        for row in rows
+    ]
 
 
 def gen_session_file_key(account_id: int):
-    return f"the-sniper/tg-user-sessions/{account_id}.session"
+    return f"tg-user-sessions/{account_id}.session"
 
 
 def gen_session_file_path(account_id: int):
@@ -49,9 +78,10 @@ async def download_session_file(account_id: int):
         os.remove(local_path)
 
     try:
+        logger.info(f"Downloading session file for account {account_id}")
         s3.download_file(R2_BUCKET_NAME, session_key, local_path)
     except Exception as e:
-        print(f"Error downloading session file: {e}")
+        logger.error(f"Error downloading session file: {e}", exc_info=True)
         return None
 
     return local_path
@@ -60,7 +90,12 @@ async def download_session_file(account_id: int):
 async def upload_session_file(account_id: int):
     session_key = gen_session_file_key(account_id)
     session_file = gen_session_file_path(account_id)
-    s3.upload_file(R2_BUCKET_NAME, session_key, session_file)
+
+    try:
+        s3.upload_file(session_file, R2_BUCKET_NAME, session_key)
+    except Exception as e:
+        logger.error(f"Failed to upload session file {session_file}: {e}")
+        raise
 
 
 async def heartbeat(pg_conn: asyncpg.Connection, account: Account):

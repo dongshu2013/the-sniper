@@ -16,9 +16,9 @@ aiohttp = "^3.9.1"
 pydantic = "^2.6.1"
 python-dotenv = "^1.0.0"
 APScheduler = "^3.10.4"
-
 cloudscraper = "^1.2.71"
-boto3 = "^1.36.1"
+boto3 = "1.26.137"
+
 [tool.poetry.group.dev.dependencies]
 black = "^24.1.0"
 isort = "^5.13.0"

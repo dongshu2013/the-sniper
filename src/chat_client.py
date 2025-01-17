@@ -30,29 +30,10 @@ logger = logging.getLogger(__name__)
 redis_client = Redis.from_url(REDIS_URL)
 
 
-class TelegramAccountConfig:
-    def __init__(self, session_name: str, api_id: str, api_hash: str, phone: str):
-        self.session_name = session_name
-        self.api_id = api_id
-        self.api_hash = api_hash
-        self.phone = phone
-
-
-def load_telegram_configs(config_path: str) -> List[TelegramAccountConfig]:
+def load_telegram_configs(config_path: str) -> List[str]:
     with open(config_path, "r") as f:
         config_data = yaml.safe_load(f)
-
-    accounts = []
-    for account in config_data["telegram_accounts"]:
-        accounts.append(
-            TelegramAccountConfig(
-                session_name=account["session_name"],
-                api_id=account["api_id"],
-                api_hash=account["api_hash"],
-                phone=account["phone"],
-            )
-        )
-    return accounts
+    return config_data["telegram_accounts"]
 
 
 async def run():
@@ -60,47 +41,60 @@ async def run():
     pg_conn = await asyncpg.connect(DATABASE_URL)
     accounts = load_telegram_configs("config/config.yaml")
     accounts = await init_accounts(pg_conn, accounts)
+    if not accounts:
+        logger.error("No valid accounts found")
+        return
+
     heartbeat_processor = AccountHeartbeatProcessor(accounts)
     tg_link_processors = [TgLinkPreProcessor(account.client) for account in accounts]
     group_processors = [GroupProcessor(account.client) for account in accounts]
 
     try:
-        client_tasks = [account.client.run_until_disconnected() for account in accounts]
-        heartbeat_processor_task = heartbeat_processor.start_processing()
-        tg_link_processor_tasks = [
-            tg_proc.start_processing() for tg_proc in tg_link_processors
-        ]
-        group_processor_tasks = [
-            grp_proc.start_processing() for grp_proc in group_processors
-        ]
-        await asyncio.gather(
-            *client_tasks,
-            heartbeat_processor_task,
-            *tg_link_processor_tasks,
-            *group_processor_tasks,
-        )
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        all_tasks = [account.client.run_until_disconnected() for account in accounts]
+        all_tasks.append(heartbeat_processor.start_processing())
+        all_tasks.extend([tg_proc.start_processing() for tg_proc in tg_link_processors])
+        all_tasks.extend([grp_proc.start_processing() for grp_proc in group_processors])
+        async with asyncio.TaskGroup() as tg:
+            running_tasks = [tg.create_task(task) for task in all_tasks]
+        await asyncio.gather(*running_tasks)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Shutting down gracefully...")
+        for task in asyncio.all_tasks():
+            if task is not asyncio.current_task():
+                task.cancel()
         for account in accounts:
-            logger.info(f"Uploading session file for account {account.id}")
             await account.client.disconnect()
-            await upload_session_file(account.id)
+        await pg_conn.close()
+        await redis_client.aclose()
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise
+    finally:
+        for account in accounts:
+            try:
+                await upload_session_file(account.tg_id)
+                logger.info(f"Uploading session file for account {account.tg_id}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to upload session file for account {account.tg_id}: {e}"
+                )
+        logger.info("Shutdown complete")
 
 
 async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
     accounts = await load_accounts(pg_conn, account_ids)
     for account in accounts:
-        logger.info(f"Downloading session file for account {account.id}")
-        session_file = await download_session_file(account.id)
+        logger.info(f"Downloading session file for account {account.tg_id}")
+        session_file = await download_session_file(account.tg_id)
         if not session_file:
-            logger.error(f"Failed to download session file for account {account.id}")
+            logger.error(f"Failed to download session file for account {account.tg_id}")
             continue
         client = TelegramClient(session_file, account.api_id, account.api_hash)
         await client.start(phone=account.phone)
-        await register_handlers(client)
-        logger.info(f"Started Telegram client for account {account.id}")
+        await register_handlers(pg_conn, client)
+        logger.info(f"Started Telegram client for account {account.tg_id}")
         account.client = client
-    return accounts
+    return [acc for acc in accounts if acc.client is not None]
 
 
 async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient):

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from telethon import TelegramClient
 
 
@@ -69,10 +69,12 @@ class ChatMessage(BaseModel):
 
 
 class Account(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     id: int
+    tg_id: str
     api_id: str
     api_hash: str
     phone: str
     status: AccountStatus
-    last_active_at: int
+    last_active_at: Optional[int]
     client: Optional[TelegramClient]
