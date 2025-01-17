@@ -155,16 +155,11 @@ class GroupProcessor(ProcessorBase):
                         quality_reports = quality_reports[-MAX_QUALITY_REPORTS_COUNT:]
                     if len(quality_reports) == MAX_QUALITY_REPORTS_COUNT:
                         scores = [
-                            (
-                                0.0
-                                if isinstance(report, list)
-                                else report.get("score", None)
-                            )
-                            for report in quality_reports
+                            self.get_quality_score(report) for report in quality_reports
                         ]
                         scores = [score for score in scores if score is not None]
                         average_score = sum(scores) / len(scores)
-                        latest_score = quality_reports[-1]["score"]
+                        latest_score = self.get_quality_score(quality_reports[-1])
                         status = (
                             ChatStatus.LOW_QUALITY.value
                             if average_score < LOW_QUALITY_THRESHOLD
@@ -185,6 +180,9 @@ class GroupProcessor(ProcessorBase):
                     status,
                 )
             )
+
+    def get_quality_score(self, report: dict | list) -> float:
+        return 0.0 if isinstance(report, list) else report.get("score", 0.0)
 
     def should_evaluate(
         self, status: str, quality_reports: str
