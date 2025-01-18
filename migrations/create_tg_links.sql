@@ -11,3 +11,8 @@ CREATE TABLE IF NOT EXISTS tg_link_status (
 );
 
 CREATE INDEX idx_tg_link_status_tg_link ON tg_link_status(tg_link);
+
+ALTER TABLE tg_link_status 
+ADD COLUMN mark_name VARCHAR(255);
+
+CREATE INDEX idx_tg_link_status_mark_name ON tg_link_status(mark_name);
