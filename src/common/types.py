@@ -20,6 +20,7 @@ class EntityType(Enum):
 class TgLinkStatus(Enum):
     PENDING_PRE_PROCESSING = "pending_pre_processing"
     PENDING_PROCESSING = "pending_processing"
+    PROCESSING = "processing"
     PROCESSED = "processed"
     ERROR = "error"
     IGNORED = "ignored"
