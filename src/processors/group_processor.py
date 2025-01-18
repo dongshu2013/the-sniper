@@ -171,7 +171,8 @@ class GroupProcessor(ProcessorBase):
                         )
 
             # 4. update photo
-            db_photo = chat_info.get("photo", None) or {}
+            db_photo = chat_info.get("photo", None)
+            db_photo = json.loads(db_photo) if db_photo else {}
             current_photo = getattr(dialog.entity, "photo", None)
             logger.info(f"current photo: {current_photo}")
             if not current_photo:
