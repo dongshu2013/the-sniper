@@ -175,18 +175,19 @@ class GroupProcessor(ProcessorBase):
             db_photo = json.loads(db_photo) if db_photo else {}
             current_photo = getattr(dialog.entity, "photo", None)
             logger.info(f"current photo: {current_photo}")
-            if not current_photo:
+            photo_id = getattr(current_photo, "photo_id", None)
+            if not photo_id:
                 db_photo = None
-            elif current_photo.photo_id != db_photo.get("id"):
+            elif photo_id != db_photo.get("id"):
                 local_photo_path = await self.client.download_profile_photo(
-                    dialog.entity, file=f"temp_photo_{current_photo.photo_id}"
+                    dialog.entity, file=f"temp_photo_{photo_id}"
                 )
                 if local_photo_path:
                     logger.info(f"local photo path: {local_photo_path}")
                     extension = await self._get_photo_extension(local_photo_path)
-                    photo_path = f"photos/{current_photo.photo_id}{extension}"
+                    photo_path = f"photos/{photo_id}{extension}"
                     upload_file(local_photo_path, photo_path)
-                    db_photo["id"] = current_photo.photo_id
+                    db_photo["id"] = photo_id
                     db_photo["path"] = photo_path
                     try:
                         os.remove(local_photo_path)
