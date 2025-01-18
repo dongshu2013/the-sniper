@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     chat_photo_url TEXT DEFAULT '',
     name VARCHAR(255) DEFAULT '',
     about TEXT DEFAULT '',
+    photo JSONB DEFAULT NULL,
     username VARCHAR(255) DEFAULT '',
     participants_count INTEGER DEFAULT 0,
     entity JSONB DEFAULT NULL,

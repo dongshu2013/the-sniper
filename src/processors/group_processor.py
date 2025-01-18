@@ -1,5 +1,7 @@
+import imghdr
 import json
 import logging
+import os
 import time
 from typing import Optional, Tuple
 
@@ -11,6 +13,7 @@ from telethon.tl.types import InputMessagesFilterPinned
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL
+from src.common.r2_client import upload_file
 from src.common.types import AccountChatStatus, ChatStatus, EntityType
 from src.common.utils import normalize_chat_id, parse_ai_response
 from src.processors.processor import ProcessorBase
@@ -167,6 +170,28 @@ class GroupProcessor(ProcessorBase):
                             else ChatStatus.ACTIVE.value
                         )
 
+            # 4. update photo
+            db_photo = chat_info.get("photo", None) or {}
+            current_photo = getattr(dialog.entity, "photo", None)
+            logger.info(f"current photo: {current_photo}")
+            if not current_photo:
+                db_photo = None
+            elif current_photo.photo_id != db_photo.get("id"):
+                local_photo_path = await self.client.download_profile_photo(
+                    dialog.entity, file=f"temp_photo_{current_photo.photo_id}"
+                )
+                if local_photo_path:
+                    logger.info(f"local photo path: {local_photo_path}")
+                    extension = await self._get_photo_extension(local_photo_path)
+                    photo_path = f"photos/{current_photo.photo_id}{extension}"
+                    upload_file(local_photo_path, photo_path)
+                    db_photo["id"] = current_photo.photo_id
+                    db_photo["path"] = photo_path
+                    try:
+                        os.remove(local_photo_path)
+                    except Exception as e:
+                        logger.error(f"Failed to remove local photo: {e}")
+
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
                 (
@@ -178,6 +203,7 @@ class GroupProcessor(ProcessorBase):
                     json.dumps(entity) if entity else None,
                     json.dumps(quality_reports),
                     status,
+                    json.dumps(db_photo) if db_photo else None,
                 )
             )
 
@@ -230,7 +256,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, entity, quality_reports
+            SELECT chat_id, status, entity, quality_reports, photo
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -240,6 +266,7 @@ class GroupProcessor(ProcessorBase):
                 "status": row["status"],
                 "entity": row["entity"],
                 "quality_reports": row["quality_reports"],
+                "photo": row["photo"],
             }
             for row in rows
         }
@@ -392,12 +419,13 @@ class GroupProcessor(ProcessorBase):
                 entity,
                 quality_reports,
                 status,
+                photo,
             ) = update
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, about, username, participants_count, entity, quality_reports, status, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                    chat_id, name, about, username, participants_count, entity, quality_reports, status, photo, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     about = EXCLUDED.about,
@@ -406,7 +434,8 @@ class GroupProcessor(ProcessorBase):
                     updated_at = CURRENT_TIMESTAMP,
                     entity = EXCLUDED.entity,
                     quality_reports = EXCLUDED.quality_reports,
-                    status = EXCLUDED.status
+                    status = EXCLUDED.status,
+                    photo = EXCLUDED.photo
                 """,
                 chat_id,
                 name,
@@ -416,6 +445,7 @@ class GroupProcessor(ProcessorBase):
                 entity,
                 quality_reports,
                 status,
+                photo,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
@@ -446,3 +476,13 @@ class GroupProcessor(ProcessorBase):
             account_id,
             chat_ids,
         )
+
+    async def _get_photo_extension(self, file_path: str) -> str:
+        """Detect the file extension of the downloaded photo."""
+        try:
+            img_type = imghdr.what(file_path)
+            if img_type:
+                return f".{img_type}"
+        except:
+            pass
+        return ".jpg"

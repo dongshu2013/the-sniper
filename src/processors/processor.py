@@ -1,4 +1,7 @@
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorBase:
@@ -9,7 +12,10 @@ class ProcessorBase:
     async def start_processing(self):
         self.running = True
         while self.running:
-            await self.process()
+            try:
+                await self.process()
+            except Exception as e:
+                logger.error(f"Failed to process: {e}", exc_info=True)
             await asyncio.sleep(self.interval)
 
     def stop_processing(self):

@@ -2,30 +2,9 @@ import logging
 import os
 
 import asyncpg
-import boto3
-from botocore.config import Config
 
-from src.common.config import (
-    R2_ACCESS_KEY_ID,
-    R2_BUCKET_NAME,
-    R2_ENDPOINT,
-    R2_SECRET_ACCESS_KEY,
-)
+from src.common.r2_client import download_file, upload_file
 from src.common.types import Account, AccountStatus
-
-# Create the client
-s3 = boto3.client(
-    service_name="s3",
-    endpoint_url=R2_ENDPOINT,
-    aws_access_key_id=R2_ACCESS_KEY_ID,
-    aws_secret_access_key=R2_SECRET_ACCESS_KEY,
-    region_name="auto",
-    config=Config(
-        s3={"addressing_style": "virtual"},
-        signature_version="s3v4",
-        retries={"max_attempts": 3},
-    ),
-)
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +58,7 @@ async def download_session_file(account_id: int):
 
     try:
         logger.info(f"Downloading session file for account {account_id}")
-        s3.download_file(R2_BUCKET_NAME, session_key, local_path)
+        download_file(session_key, local_path)
     except Exception as e:
         logger.error(f"Error downloading session file: {e}", exc_info=True)
         return None
@@ -92,7 +71,7 @@ async def upload_session_file(account_id: int):
     session_file = gen_session_file_path(account_id)
 
     try:
-        s3.upload_file(session_file, R2_BUCKET_NAME, session_key)
+        upload_file(session_file, session_key)
     except Exception as e:
         logger.error(f"Failed to upload session file {session_file}: {e}")
         raise
