@@ -124,9 +124,9 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
         topic_id = None
         if message.reply_to:
             if message.reply_to.forum_topic:
-                if message.reply_to.reply_to_topic_id:
+                if message.reply_to.reply_to_top_id:
                     reply_to = message.reply_to.reply_to_msg_id
-                    topic_id = message.reply_to.reply_to_topic_id
+                    topic_id = message.reply_to.reply_to_top_id
                 else:
                     topic_id = message.reply_to.reply_to_msg_id
             else:
