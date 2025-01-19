@@ -71,6 +71,8 @@ class ChatMessage(BaseModel):
     chat_id: str
     message_text: str
     sender_id: str
+    reply_to: Optional[str]
+    topic_id: Optional[str]
     message_timestamp: int
 
 

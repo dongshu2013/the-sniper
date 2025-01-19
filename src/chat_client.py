@@ -108,16 +108,29 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
-        if not event.is_group or not event.is_channel:
+        message = event.message
+        if not message.is_group or not message.is_channel:
             return
 
-        chat_id = str(event.chat_id)
+        chat_id = str(message.chat_id)
         if chat_id.startswith("-100"):
             chat_id = chat_id[4:]
 
-        message_id = str(event.id)
+        message_id = str(message.id)
         if await redis_client.exists(message_seen_key(chat_id, message_id)):
             return
+
+        reply_to = None
+        topic_id = None
+        if message.reply_to:
+            if message.reply_to.forum_topic:
+                if message.reply_to.reply_to_topic_id:
+                    reply_to = message.reply_to.reply_to_msg_id
+                    topic_id = message.reply_to.reply_to_topic_id
+                else:
+                    topic_id = message.reply_to.reply_to_msg_id
+            else:
+                reply_to = message.reply_to.reply_to_msg_id
 
         message_data = ChatMessage(
             message_id=message_id,
@@ -125,6 +138,8 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
             message_text=event.message.text,
             sender_id=str(event.sender_id),
             message_timestamp=int(event.date.timestamp()),
+            reply_to=str(reply_to) if reply_to else None,
+            topic_id=str(topic_id) if topic_id else None,
         )
         pipeline = redis_client.pipeline()
         pipeline.incr(chat_per_hour_stats_key(chat_id, "messages_count"))
