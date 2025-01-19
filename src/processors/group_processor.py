@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import asyncpg
@@ -51,7 +51,7 @@ class GroupProcessor(ProcessorBase):
         await self.update_account_chat_map(str(me.id), chat_ids)
         logger.info(f"updated account chat map for {me.id}")
 
-        logger.info(f"updating {len(chat_ids)} groups")
+        logger.info(f"updating {len(chat_ids)} groups for {me.username}")
         for chat_id, dialog in zip(chat_ids, dialogs):
             if not dialog.is_group and not dialog.is_channel:
                 continue
@@ -63,7 +63,7 @@ class GroupProcessor(ProcessorBase):
                     "admins": [],
                     "pinned_messages": [],
                     "photo": None,
-                    "updated_at": datetime.now(),
+                    "updated_at": datetime.now() - timedelta(hours=2),
                 },
             )
 
