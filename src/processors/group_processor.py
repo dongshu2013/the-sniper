@@ -1,3 +1,4 @@
+import asyncio
 import imghdr
 import json
 import logging
@@ -96,6 +97,7 @@ class GroupProcessor(ProcessorBase):
                     json.dumps(admins),
                 )
             )
+            await asyncio.sleep(1)
 
     async def get_pinned_messages(self, dialog: any) -> list[str]:
         chat_id = normalize_chat_id(dialog.entity.id)
