@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from typing import Optional
 
 import asyncpg
@@ -55,7 +56,20 @@ class GroupProcessor(ProcessorBase):
             if not dialog.is_group and not dialog.is_channel:
                 continue
 
-            updated_at_epoch = int(chat_info_map[chat_id]["updated_at"].timestamp())
+            chat_info = chat_info_map.get(
+                chat_id,
+                {
+                    "status": ChatStatus.EVALUATING.value,
+                    "admins": [],
+                    "pinned_messages": [],
+                    "photo": None,
+                    "updated_at": datetime.now(),
+                },
+            )
+
+            updated_at_epoch = int(
+                chat_info.get("updated_at", datetime.now()).timestamp()
+            )
             if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
                 logger.info(
                     f"skipping group {dialog.name} because it was updated recently"
@@ -63,8 +77,6 @@ class GroupProcessor(ProcessorBase):
                 continue
 
             logger.info(f"processing group {dialog.name}")
-
-            chat_info = chat_info_map.get(chat_id, {})
             status = chat_info.get("status", ChatStatus.EVALUATING.value)
             if status == ChatStatus.BLOCKED.value:
                 logger.info(f"skipping blocked or low quality group {dialog.name}")
