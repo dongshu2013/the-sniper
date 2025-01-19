@@ -66,9 +66,14 @@ async def download_session_file(account_id: int):
     return local_path
 
 
-async def upload_session_file(account_id: int):
+async def upload_session_file(account_id: int, session_file: str | None = None):
     session_key = gen_session_file_key(account_id)
-    session_file = gen_session_file_path(account_id)
+    if not session_file:
+        session_file = gen_session_file_path(account_id)
+
+    if not os.path.exists(session_file):
+        logger.error(f"Session file {session_file} does not exist")
+        return
 
     try:
         upload_file(session_file, session_key)
