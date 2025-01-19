@@ -56,17 +56,25 @@ class MessageQueueProcessor(ProcessorBase):
         try:
             await self.pg_conn.executemany(
                 """
-                INSERT INTO chat_messages
-                        (message_id, chat_id, message_text,
-                         sender_id, message_timestamp)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (chat_id, message_id) DO NOTHING
-                    """,
+                INSERT INTO chat_messages (
+                    message_id,
+                    chat_id,
+                    message_text,
+                    reply_to,
+                    topic_id,
+                    sender_id,
+                    message_timestamp
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (chat_id, message_id) DO NOTHING
+                """,
                 [
                     (
                         m.message_id,
                         m.chat_id,
                         m.message_text,
+                        m.reply_to,
+                        m.topic_id,
                         m.sender_id,
                         m.message_timestamp,
                     )

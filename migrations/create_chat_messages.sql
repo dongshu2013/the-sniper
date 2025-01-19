@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     reply_to TEXT,
     topic_id TEXT,
     message_text TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
+    sender_id TEXT,
     message_timestamp BIGINT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)

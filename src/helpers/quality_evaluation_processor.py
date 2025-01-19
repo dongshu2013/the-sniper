@@ -54,7 +54,7 @@ Scoring guidelines:
 async def evaluate_chat_quality(dialog: any, chat_info: dict) -> Optional[dict]:
     chat_id = normalize_chat_id(dialog.id)
     logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
-    quality_reports, should_evaluate = should_evaluate(
+    quality_reports, should_evaluate = _should_evaluate(
         status, chat_info.get("quality_reports", "[]")
     )
     if should_evaluate:
@@ -127,7 +127,7 @@ async def _evaluate_chat_quality(self, dialog: any) -> Optional[dict]:
         return None
 
 
-def should_evaluate(
+def _should_evaluate(
     status: str, quality_reports: str
 ) -> Tuple[Optional[list[dict]], bool]:
     if status == ChatStatus.BLOCKED.value or status == ChatStatus.LOW_QUALITY.value:

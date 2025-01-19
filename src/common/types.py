@@ -39,7 +39,7 @@ class ChatStatus(Enum):
 
 
 class ChatPhoto(BaseModel):
-    id: str
+    id: str | int
     path: str
 
 
@@ -70,7 +70,7 @@ class ChatMessage(BaseModel):
     message_id: str
     chat_id: str
     message_text: str
-    sender_id: str
+    sender_id: Optional[str]
     reply_to: Optional[str]
     topic_id: Optional[str]
     message_timestamp: int

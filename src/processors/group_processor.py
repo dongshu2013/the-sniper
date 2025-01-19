@@ -23,16 +23,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-MIN_MESSAGES_THRESHOLD = 10
-INACTIVE_HOURS_THRESHOLD = 24
-LOW_QUALITY_THRESHOLD = 5.0
-
-MAX_QUALITY_REPORTS_COUNT = 5
+PERMISSION_DENIED_ADMIN_ID = "permission_denied"
 
 
 class GroupProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient):
-        super().__init__(interval=900)
+        super().__init__(interval=3600)
         self.client = client
         self.pg_conn = None
 
@@ -60,29 +56,31 @@ class GroupProcessor(ProcessorBase):
 
             chat_info = chat_info_map.get(chat_id, {})
             status = chat_info.get("status", ChatStatus.EVALUATING.value)
-
-            if (
-                status == ChatStatus.BLOCKED.value
-                or status == ChatStatus.LOW_QUALITY.value
-            ):
+            if status == ChatStatus.BLOCKED.value:
                 logger.info(f"skipping blocked or low quality group {dialog.name}")
                 continue
 
             # 1. Get group description
+            logger.info("Getting group description...")
             description = await self.get_group_description(dialog)
             logger.info(f"group description: {description}")
 
             # 2. update photo
+            logger.info("Updating photo...")
             photo = chat_info.get("photo", None)
             photo = ChatPhoto.model_validate_json(photo) if photo else None
             photo = await self.get_group_photo(dialog, photo)
 
             # 3. get pinned messages
+            logger.info("Getting pinned messages...")
             pinned_message_ids = await self.get_pinned_messages(dialog)
             logger.info(f"pinned messages: {pinned_message_ids}")
 
             # 4. get admins
-            admins = await self.get_admins(dialog)
+            logger.info("Getting admins...")
+            admins = chat_info.get("admins", [])
+            if admins and admins[0] == PERMISSION_DENIED_ADMIN_ID:
+                admins = await self.get_admins(dialog)
             logger.info(f"admins: {admins}")
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
@@ -136,7 +134,7 @@ class GroupProcessor(ProcessorBase):
                             message_id,
                             message.text,
                             sender_id,
-                            message.date,
+                            int(message.date.timestamp()),
                         )
                     )
 
@@ -154,10 +152,14 @@ class GroupProcessor(ProcessorBase):
         return message_ids
 
     async def get_admins(self, dialog: any) -> list[str]:
-        admins = await self.client.get_participants(
-            dialog.entity, filter=ChannelParticipantsAdmins
-        )
-        return [str(admin.id) for admin in admins]
+        try:
+            admins = await self.client.get_participants(
+                dialog.entity, filter=ChannelParticipantsAdmins
+            )
+            return [str(admin.id) for admin in admins]
+        except Exception as e:
+            logger.error(f"Failed to get admins: {e}")
+            return [PERMISSION_DENIED_ADMIN_ID]
 
     async def get_group_description(self, dialog: any) -> str:
         if dialog.is_channel:
@@ -208,7 +210,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, entity, quality_reports, photo
+            SELECT chat_id, status, admins, photo
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -216,8 +218,7 @@ class GroupProcessor(ProcessorBase):
         return {
             row["chat_id"]: {
                 "status": row["status"],
-                "entity": row["entity"],
-                "quality_reports": row["quality_reports"],
+                "admins": json.loads(row["admins"]),
                 "photo": row["photo"],
             }
             for row in rows
