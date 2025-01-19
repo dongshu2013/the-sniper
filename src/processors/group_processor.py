@@ -81,8 +81,10 @@ class GroupProcessor(ProcessorBase):
             logger.info("Getting admins...")
             admins = chat_info.get("admins", [])
             if admins and admins[0] == PERMISSION_DENIED_ADMIN_ID:
+                logger.info(f"admin permission denied for {dialog.name}, skipping...")
+            else:
                 admins = await self.get_admins(dialog)
-            logger.info(f"admins: {admins}")
+                logger.info(f"admins: {admins}")
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
