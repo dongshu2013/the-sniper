@@ -3,6 +3,7 @@ import imghdr
 import json
 import logging
 import os
+import time
 from typing import Optional
 
 import asyncpg
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 PERMISSION_DENIED_ADMIN_ID = "permission_denied"
+GROUP_UPDATE_INTERVAL = 3600
 
 
 class GroupProcessor(ProcessorBase):
@@ -51,6 +53,13 @@ class GroupProcessor(ProcessorBase):
         logger.info(f"updating {len(chat_ids)} groups")
         for chat_id, dialog in zip(chat_ids, dialogs):
             if not dialog.is_group and not dialog.is_channel:
+                continue
+
+            updated_at_epoch = int(chat_info_map[chat_id]["updated_at"].timestamp())
+            if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
+                logger.info(
+                    f"skipping group {dialog.name} because it was updated recently"
+                )
                 continue
 
             logger.info(f"processing group {dialog.name}")
@@ -213,7 +222,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, admins, photo
+            SELECT chat_id, status, admins, photo, updated_at
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -223,6 +232,7 @@ class GroupProcessor(ProcessorBase):
                 "status": row["status"],
                 "admins": json.loads(row["admins"]),
                 "photo": row["photo"],
+                "updated_at": row["updated_at"],
             }
             for row in rows
         }
