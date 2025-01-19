@@ -7,6 +7,9 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     photo JSONB DEFAULT NULL,
     username VARCHAR(255) DEFAULT '',
     participants_count INTEGER DEFAULT 0,
+    category VARCHAR(255),
+    pinned_messages JSONB DEFAULT '[]',
+    admins JSONB DEFAULT '[]',
     entity JSONB DEFAULT NULL,
     quality_reports JSONB DEFAULT '[]',
     is_blocked BOOLEAN DEFAULT FALSE, -- deprecated

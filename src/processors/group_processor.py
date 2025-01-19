@@ -2,20 +2,18 @@ import imghdr
 import json
 import logging
 import os
-import time
-from typing import Optional, Tuple
+from typing import Optional
 
 import asyncpg
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
-from telethon.tl.types import InputMessagesFilterPinned
+from telethon.tl.types import ChannelParticipantsAdmins, InputMessagesFilterPinned
 
-from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL
 from src.common.r2_client import upload_file
-from src.common.types import AccountChatStatus, ChatStatus, EntityType
-from src.common.utils import normalize_chat_id, parse_ai_response
+from src.common.types import AccountChatStatus, ChatPhoto, ChatStatus
+from src.common.utils import normalize_chat_id
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -31,72 +29,12 @@ LOW_QUALITY_THRESHOLD = 5.0
 
 MAX_QUALITY_REPORTS_COUNT = 5
 
-# flake8: noqa: E501
-# format: off
-SYSTEM_PROMPT = """
-You are an expert in memecoins and telegram groups. Now you joined a lot of group/channels. You goal is to
-classify the group/channel into one of the following categories:
-1. memecoin group: a group/channel that is about a specific memecoin
-2. other group: a group/channel that is not about a memecoin
-"""
-
-ENTITY_EXTRACTOR_PROMPT = """
-Given the following context extracted from a telegram chat, including title, description, pinned messages
-and recent messages, extract the entity information.
-
-Context:
-{context}
-
-Previous Extracted Entity:
-{existing_entity}
-
-Output the entity information in JSON format with following fields:
-1. type: if the chat is about a specific memecoin, set to "memecoin", if it's not about a memecoin, set to "other", if you are not sure, set to "unknown".
-2. name: if the chat is about a specific memecoin, set it to the ticker of the memecoin, otherwise set it to None
-3. chain: if the chat is about a specific memecoin, set it to the chain of the memecoin, otherwise set it to None
-4. address: if the chat is about a specific memecoin, set it to the address of the memecoin, otherwise set it to None
-5. website: get the official website url of the group if there is any, otherwise set it to None
-6. twitter: get the twitter username of the group if there is any, otherwise set it to None
-
-Remember:
-If the previous extracted entity is not None, you can use it as a reference to extract the entity information. You should
-merge the new extracted entity with the previous extracted entity if it makes sense to you to get more comprehensive
-information.
-"""
-
-QUALITY_EVALUATION_PROMPT = """
-You are an expert in evaluating chat quality. Analyze the given messages and evaluate the chat quality.
-
-You will follow the following evaluation guidelines:
-1. User engagement and interactions: If there are a lot of different people posting and engaging, it's a good sign.
-2. Conversation quality and diversity: If the messages are diverse and providing different information(including promotional information), it's a good sign.
-3. If the messages are repetitive and the same group of people are posting, it's a bad sign.
-
-Output JSON format:
-{
-    "score": float (0-10),
-    "reason": "very brief explanation"
-}
-For the reason field, you should explain why you give the score very briefly, the overall
-reason should be less than 10 words if possible.
-
-Scoring guidelines:
-- 0: if the group is dead and no one is talking
-- 1-3(low quality): low user engagement, spam, repetitive posts, no real discussion
-- 4-6(medium quality): medium user engagement, less repetitive posts with some diverse information
-- 7-10(high quality): active user engagement, diverse user posts, very few repetitive posts
-- 10(excellent quality): active user engagment, a lot of real discussions happening, diverse information being shared
-"""
-
-# format: on
-
 
 class GroupProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient):
-        super().__init__(interval=3 * 3600)
+        super().__init__(interval=900)
         self.client = client
         self.pg_conn = None
-        self.ai_agent = AgentClient()
 
     async def process(self):
         if not self.pg_conn:
@@ -134,64 +72,18 @@ class GroupProcessor(ProcessorBase):
             description = await self.get_group_description(dialog)
             logger.info(f"group description: {description}")
 
-            # 2. Extract and update entity information
-            entity, is_finalized = self._parse_entity(chat_info.get("entity", None))
-            if not is_finalized:
-                new_entity = await self._extract_and_update_entity(
-                    dialog, entity, description
-                )
-                logger.info(f"extracted entity for group {dialog.name}: {new_entity}")
-                entity = entity.update(new_entity or {}) if entity else new_entity
+            # 2. update photo
+            photo = chat_info.get("photo", None)
+            photo = ChatPhoto.model_validate_json(photo) if photo else None
+            photo = await self.get_group_photo(dialog, photo)
 
-            # 3. Evaluate chat quality
-            logger.info(f"evaluating chat quality for {chat_id}: {dialog.name}")
-            quality_reports, should_evaluate = self.should_evaluate(
-                status, chat_info.get("quality_reports", "[]")
-            )
-            if should_evaluate:
-                quality_reports = quality_reports or []
-                new_report = await self._evaluate_chat_quality(dialog)
-                if new_report:
-                    quality_reports.append(new_report)
-                    # only keep the latest 5 reports
-                    if len(quality_reports) > MAX_QUALITY_REPORTS_COUNT:
-                        quality_reports = quality_reports[-MAX_QUALITY_REPORTS_COUNT:]
-                    if len(quality_reports) == MAX_QUALITY_REPORTS_COUNT:
-                        scores = [
-                            self.get_quality_score(report) for report in quality_reports
-                        ]
-                        scores = [score for score in scores if score is not None]
-                        average_score = sum(scores) / len(scores)
-                        latest_score = self.get_quality_score(quality_reports[-1])
-                        status = (
-                            ChatStatus.LOW_QUALITY.value
-                            if average_score < LOW_QUALITY_THRESHOLD
-                            and latest_score < LOW_QUALITY_THRESHOLD
-                            else ChatStatus.ACTIVE.value
-                        )
+            # 3. get pinned messages
+            pinned_message_ids = await self.get_pinned_messages(dialog)
+            logger.info(f"pinned messages: {pinned_message_ids}")
 
-            # 4. update photo
-            db_photo = chat_info.get("photo", None)
-            db_photo = json.loads(db_photo) if db_photo else {}
-            current_photo = getattr(dialog.entity, "photo", None)
-            logger.info(f"current photo: {current_photo}")
-            if not current_photo:
-                db_photo = None
-            elif current_photo.photo_id != db_photo.get("id"):
-                local_photo_path = await self.client.download_profile_photo(
-                    dialog.entity, file=f"temp_photo_{current_photo.photo_id}"
-                )
-                if local_photo_path:
-                    logger.info(f"local photo path: {local_photo_path}")
-                    extension = await self._get_photo_extension(local_photo_path)
-                    photo_path = f"photos/{current_photo.photo_id}{extension}"
-                    upload_file(local_photo_path, photo_path)
-                    db_photo["id"] = current_photo.photo_id
-                    db_photo["path"] = photo_path
-                    try:
-                        os.remove(local_photo_path)
-                    except Exception as e:
-                        logger.error(f"Failed to remove local photo: {e}")
+            # 4. get admins
+            admins = await self.get_admins(dialog)
+            logger.info(f"admins: {admins}")
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
@@ -201,50 +93,109 @@ class GroupProcessor(ProcessorBase):
                     description or None,
                     getattr(dialog.entity, "username", None),
                     getattr(dialog.entity, "participants_count", 0),
-                    json.dumps(entity) if entity else None,
-                    json.dumps(quality_reports),
-                    status,
-                    json.dumps(db_photo) if db_photo else None,
+                    photo.model_dump_json() if photo else None,
+                    json.dumps(pinned_message_ids),
+                    json.dumps(admins),
                 )
             )
 
-    def get_quality_score(self, report: dict | list) -> float:
-        return 0.0 if isinstance(report, list) else report.get("score", 0.0)
+    async def get_pinned_messages(self, dialog: any) -> list[str]:
+        chat_id = normalize_chat_id(dialog.entity.id)
+        pinned_messages = await self.client.get_messages(
+            dialog.entity,
+            filter=InputMessagesFilterPinned,
+            limit=50,
+        )
+        pinned_message_ids = [
+            str(msg.id) for msg in pinned_messages if msg and msg.text
+        ]
+        existing_messages = await self.pg_conn.fetch(
+            """
+            SELECT message_id
+            FROM chat_messages
+            WHERE chat_id = $1 AND message_id = ANY($2)
+            """,
+            chat_id,
+            pinned_message_ids,
+        )
+        existing_message_ids = {row["message_id"] for row in existing_messages}
 
-    def should_evaluate(
-        self, status: str, quality_reports: str
-    ) -> Tuple[Optional[list[dict]], bool]:
-        if status == ChatStatus.BLOCKED.value or status == ChatStatus.LOW_QUALITY.value:
-            return None, False
+        message_ids = []
+        messages_to_insert = []
+        for message in pinned_messages:
+            if message and message.text:
+                message_id = str(message.id)
+                message_ids.append(message_id)
+                if message_id not in existing_message_ids:
+                    sender_id = (
+                        str(message.from_id.user_id) if message.from_id else None
+                    )
+                    messages_to_insert.append(
+                        (
+                            chat_id,
+                            message_id,
+                            message.text,
+                            sender_id,
+                            message.date,
+                        )
+                    )
 
-        try:
-            quality_reports = json.loads(quality_reports)
-            if not quality_reports:
-                return [], True
+        if messages_to_insert:
+            logger.info(f"inserting {len(messages_to_insert)} pinned messages")
+            await self.pg_conn.executemany(
+                """
+                INSERT INTO chat_messages (
+                    chat_id, message_id, message_text, sender_id, message_timestamp
+                ) VALUES ($1, $2, $3, $4, $5)
+                """,
+                messages_to_insert,
+            )
 
-            if status == ChatStatus.EVALUATING.value:
-                return quality_reports, True
-            elif status == ChatStatus.ACTIVE.value:
-                latest_evaluation = quality_reports[-1]["processed_at"]
-                should_evaluate = (
-                    int(latest_evaluation)
-                    < int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600
-                )
-                return quality_reports, should_evaluate
-            else:
-                logger.error(f"invalid chat status: {status}")
-                return quality_reports, True
-        except Exception as e:
-            logger.error(f"Failed to parse quality reports: {e}")
-            return [], True
+        return message_ids
 
-    async def get_group_description(self, dialog: any) -> Optional[str]:
+    async def get_admins(self, dialog: any) -> list[str]:
+        admins = await self.client.get_participants(
+            dialog.entity, filter=ChannelParticipantsAdmins
+        )
+        return [str(admin.id) for admin in admins]
+
+    async def get_group_description(self, dialog: any) -> str:
         if dialog.is_channel:
             result = await self.client(GetFullChannelRequest(channel=dialog.entity))
-            return result.full_chat.about or None
+            return result.full_chat.about or ""
         else:
             result = await self.client(GetFullChatRequest(chat_id=dialog.entity.id))
-            return result.full_chat.about or None
+            return result.full_chat.about or ""
+
+    async def get_group_photo(
+        self, dialog: any, photo: ChatPhoto | None
+    ) -> Optional[ChatPhoto]:
+        new_photo = getattr(dialog.entity, "photo", {})
+        logger.info(f"current photo: {new_photo}")
+        if not new_photo:
+            return None
+
+        # could be ChatPhotoEmpty which doesn't have photo field
+        photo_id = getattr(new_photo, "photo_id", None)
+        if not photo_id:
+            return None
+
+        # got new photo
+        if not photo or str(photo_id) != str(photo.id):
+            local_photo_path = await self.client.download_profile_photo(
+                dialog.entity, file=f"temp_photo_{new_photo.photo_id}"
+            )
+            if local_photo_path:
+                logger.info(f"local photo path: {local_photo_path}")
+                extension = await self._get_photo_extension(local_photo_path)
+                photo_path = f"photos/{new_photo.photo_id}{extension}"
+                upload_file(local_photo_path, photo_path)
+                try:
+                    os.remove(local_photo_path)
+                except Exception as e:
+                    logger.error(f"Failed to remove local photo: {e}")
+                photo = ChatPhoto(id=str(new_photo.photo_id), path=photo_path)
+        return photo
 
     async def get_all_dialogs(self):
         dialogs = []
@@ -272,142 +223,6 @@ class GroupProcessor(ProcessorBase):
             for row in rows
         }
 
-    def _parse_entity(self, entity: dict | str | None) -> Tuple[dict | None, bool]:
-        if entity is None:
-            return None, False
-        if isinstance(entity, str):
-            try:
-                entity = json.loads(entity)
-            except Exception as e:
-                logger.error(f"Failed to parse entity: {e}")
-                return None, False
-        entity_type = entity.get("type", None)
-        if entity_type is None:
-            return None, False
-        if entity_type == EntityType.UNKNOWN.value:
-            return None, False
-        if entity_type == EntityType.MEMECOIN.value:
-            # if entity is memecoin, it must have name and twitter
-            is_finalized = entity.get("name") and entity.get("twitter")
-            return entity, is_finalized
-        return entity, True
-
-    async def _gather_context(
-        self, dialog: any, description: str | None
-    ) -> Optional[str]:
-        """Gather context from various sources in the chat."""
-        context_parts = []
-        context_parts.append(f"\nChat Title: {dialog.name}\n")
-        if description:
-            # Limit description length
-            context_parts.append(f"\nDescription: {description[:500]}\n")
-
-        try:
-            pinned_messages = await self.client.get_messages(
-                dialog.entity,
-                filter=InputMessagesFilterPinned,
-                limit=10,  # Reduced from 50 to 3 pinned messages
-            )
-            for message in pinned_messages:
-                if message and message.text:
-                    # Limit each pinned message length
-                    context_parts.append(f"\nPinned Message: {message.text}\n")
-        except Exception as e:
-            logger.warning(f"Failed to get pinned messages: {e}")
-
-        try:
-            context_parts.append("\nRecent Messages:\n")
-            messages = await self.client.get_messages(dialog.entity, limit=10)
-            message_texts = [msg.text for msg in messages if msg and msg.text]
-            context_parts.extend(message_texts)
-        except Exception as e:
-            logger.warning(f"Failed to get messages: {e}")
-
-        # Join and limit total context length if needed
-        context = "\n".join(filter(None, context_parts))
-        return context[:24000]  # Limit total context length to be safe
-
-    async def _extract_and_update_entity(
-        self, dialog: any, existing_entity: dict | None, description: str | None
-    ) -> Optional[dict]:
-        """Extract entity information using AI."""
-        try:
-            context = await self._gather_context(dialog, description)
-            response = await self.ai_agent.chat_completion(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": ENTITY_EXTRACTOR_PROMPT.format(
-                            context=context,
-                            existing_entity=(
-                                json.dumps(existing_entity)
-                                if existing_entity
-                                else "No Data"
-                            ),
-                        ),
-                    },
-                ]
-            )
-            logger.info(f"response from ai: {response}")
-            return parse_ai_response(
-                response["choices"][0]["message"]["content"],
-                ["type", "name", "chain", "address", "website", "twitter"],
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to extract entity for group {dialog.name}: {str(e)}",
-                exc_info=True,
-            )
-            return None
-
-    async def _evaluate_chat_quality(self, dialog: any) -> Optional[dict]:
-        """Evaluate chat quality based on recent messages."""
-        try:
-            messages = await self.client.get_messages(
-                dialog.entity,
-                limit=500,
-                offset_date=int(time.time()) - INACTIVE_HOURS_THRESHOLD * 3600,
-            )
-
-            if len(messages) < MIN_MESSAGES_THRESHOLD:
-                return {
-                    "score": 0.0,
-                    "reason": "inactive",
-                    "processed_at": int(time.time()),
-                }
-
-            # Prepare messages for quality analysis
-            message_texts = []
-            for msg in messages:
-                if msg.text:
-                    sender = await msg.get_sender()
-                    sender_id = sender.id if sender else "Unknown"
-                    message_texts.append(f"[{msg.date}] {sender_id}: {msg.text}")
-
-            messages_text = "\n".join(message_texts)[:16000]  # limit buffer
-
-            # Use AI to evaluate quality
-            response = await self.ai_agent.chat_completion(
-                [
-                    {"role": "system", "content": QUALITY_EVALUATION_PROMPT},
-                    {"role": "user", "content": f"Messages:\n{messages_text}"},
-                ]
-            )
-
-            logger.info(f"response from ai: {response}")
-            report = parse_ai_response(
-                response["choices"][0]["message"]["content"], ["score", "reason"]
-            )
-            report["processed_at"] = int(time.time())
-            return report
-        except Exception as e:
-            logger.error(
-                f"Failed to evaluate chat quality: {e}",
-                exc_info=True,
-            )
-            return None
-
     async def _update_metadata(self, update: tuple):
         """Update chat metadata."""
         try:
@@ -417,66 +232,65 @@ class GroupProcessor(ProcessorBase):
                 about,
                 username,
                 participants_count,
-                entity,
-                quality_reports,
-                status,
                 photo,
+                pinned_messages,
+                admins,
             ) = update
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, about, username, participants_count, entity, quality_reports, status, photo, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+                    chat_id, name, about, username, participants_count,
+                    pinned_messages, photo, admins, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     about = EXCLUDED.about,
                     username = EXCLUDED.username,
                     participants_count = EXCLUDED.participants_count,
+                    pinned_messages = EXCLUDED.pinned_messages,
                     updated_at = CURRENT_TIMESTAMP,
-                    entity = EXCLUDED.entity,
-                    quality_reports = EXCLUDED.quality_reports,
-                    status = EXCLUDED.status,
-                    photo = EXCLUDED.photo
+                    photo = EXCLUDED.photo,
+                    admins = EXCLUDED.admins
                 """,
                 chat_id,
                 name,
                 about,
                 username,
                 participants_count,
-                entity,
-                quality_reports,
-                status,
+                pinned_messages,
                 photo,
+                admins,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
 
     async def update_account_chat_map(self, account_id: str, chat_ids: list[str]):
-        # Insert or update all chat_ids for this account
-        await self.pg_conn.executemany(
-            """
-            INSERT INTO account_chat (account_id, chat_id, status)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (account_id, chat_id) DO UPDATE SET status = $3
-            """,
-            [
-                (account_id, chat_id, AccountChatStatus.WATCHING.value)
-                for chat_id in chat_ids
-            ],
-        )
+        async with self.pg_conn.transaction():
+            # Insert or update all chat_ids for this account
+            await self.pg_conn.executemany(
+                """
+                INSERT INTO account_chat (account_id, chat_id, status)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (account_id, chat_id) DO UPDATE SET status = $3
+                """,
+                [
+                    (account_id, chat_id, AccountChatStatus.WATCHING.value)
+                    for chat_id in chat_ids
+                ],
+            )
 
-        # Update status to QUIT for chats not in the list
-        await self.pg_conn.execute(
-            """
-            UPDATE account_chat
-            SET status = $1
-            WHERE account_id = $2
-            AND chat_id != ALL($3)
-            """,
-            AccountChatStatus.QUIT.value,
-            account_id,
-            chat_ids,
-        )
+            # Update status to QUIT for chats not in the list
+            await self.pg_conn.execute(
+                """
+                UPDATE account_chat
+                SET status = $1
+                WHERE account_id = $2
+                AND chat_id != ALL($3)
+                """,
+                AccountChatStatus.QUIT.value,
+                account_id,
+                chat_ids,
+            )
 
     async def _get_photo_extension(self, file_path: str) -> str:
         """Detect the file extension of the downloaded photo."""
@@ -484,6 +298,6 @@ class GroupProcessor(ProcessorBase):
             img_type = imghdr.what(file_path)
             if img_type:
                 return f".{img_type}"
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to get photo extension: {e}")
         return ".jpg"

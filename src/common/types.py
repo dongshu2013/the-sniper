@@ -38,6 +38,11 @@ class ChatStatus(Enum):
     BLOCKED = "blocked"
 
 
+class ChatPhoto(BaseModel):
+    id: str
+    path: str
+
+
 class MemeCoinEntityMetadata(BaseModel):
     symbol: str
     launchpad: Optional[str | dict]
