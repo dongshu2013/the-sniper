@@ -45,9 +45,14 @@ class MessageQueueProcessor(ProcessorBase):
         # Process messages
         for message in raw_messages:
             try:
+                # First decode bytes to string properly
+                if isinstance(message, bytes):
+                    message = message.decode("utf-8")
+
+                # Then parse JSON
                 messages.append(ChatMessage.model_validate_json(message))
-            except ValidationError:
-                logger.error(f"Failed to decode message: {message}")
+            except (UnicodeDecodeError, ValidationError) as e:
+                logger.error(f"Failed to decode message: {message}", exc_info=e)
                 continue
 
         if not messages:

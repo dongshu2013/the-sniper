@@ -70,9 +70,9 @@ class ChatMessage(BaseModel):
     message_id: str
     chat_id: str
     message_text: str
-    sender_id: Optional[str]
-    reply_to: Optional[str]
-    topic_id: Optional[str]
+    sender_id: Optional[str] = None
+    reply_to: Optional[str] = None
+    topic_id: Optional[str] = None
     message_timestamp: int
 
 
