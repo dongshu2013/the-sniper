@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import logging
-import os
 
 import asyncpg
 from telethon import TelegramClient
@@ -51,10 +50,6 @@ async def create_new_account(api_id: str, api_hash: str, phone: str):
             fullname,
         )
 
-        # close client and connection
-        await client.disconnect()
-        await conn.close()
-
         # Upload session file
         await upload_session_file(tg_id, f"NEW_SESSION_{phone}.session")
 
@@ -68,12 +63,6 @@ async def create_new_account(api_id: str, api_hash: str, phone: str):
         await client.disconnect()
         if "conn" in locals():
             await conn.close()
-
-        # Remove temporary session file
-        try:
-            os.remove(f"NEW_SESSION_{phone}.session")
-        except Exception as e:
-            logger.error(f"Failed to remove temporary session file: {e}")
 
 
 def main():
