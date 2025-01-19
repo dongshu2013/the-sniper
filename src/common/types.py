@@ -20,6 +20,7 @@ class EntityType(Enum):
 class TgLinkStatus(Enum):
     PENDING_PRE_PROCESSING = "pending_pre_processing"
     PENDING_PROCESSING = "pending_processing"
+    PROCESSING = "processing"
     PROCESSED = "processed"
     ERROR = "error"
     IGNORED = "ignored"
@@ -35,6 +36,11 @@ class ChatStatus(Enum):
     ACTIVE = "active"
     LOW_QUALITY = "low_quality"
     BLOCKED = "blocked"
+
+
+class ChatPhoto(BaseModel):
+    id: str
+    path: str
 
 
 class MemeCoinEntityMetadata(BaseModel):

@@ -43,7 +43,6 @@ class MessageQueueProcessor(ProcessorBase):
             raw_messages = [raw_messages]
 
         # Process messages
-        logger.info(f"will process {len(raw_messages)} raw messages")
         for message in raw_messages:
             try:
                 messages.append(ChatMessage.model_validate_json(message))
@@ -54,7 +53,6 @@ class MessageQueueProcessor(ProcessorBase):
         if not messages:
             return 0
 
-        logger.info(f"will process {len(messages)} messages")
         try:
             await self.pg_conn.executemany(
                 """
@@ -75,7 +73,6 @@ class MessageQueueProcessor(ProcessorBase):
                     for m in messages
                 ],
             )
-            logger.info(f"Processed {len(messages)} messages")
             return len(messages)
         except Exception as e:
             logger.error(f"Database error: {e}")
