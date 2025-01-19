@@ -125,15 +125,14 @@ class GroupProcessor(ProcessorBase):
                 message_id = str(message.id)
                 message_ids.append(message_id)
                 if message_id not in existing_message_ids:
-                    sender_id = (
-                        str(message.from_id.user_id) if message.from_id else None
-                    )
+                    from_id = getattr(message, "from_id", {})
+                    sender_id = getattr(from_id, "user_id", None)
                     messages_to_insert.append(
                         (
                             chat_id,
                             message_id,
                             message.text,
-                            sender_id,
+                            str(sender_id) if sender_id else None,
                             int(message.date.timestamp()),
                         )
                     )
