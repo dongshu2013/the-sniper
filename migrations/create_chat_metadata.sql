@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     participants_count INTEGER DEFAULT 0,
     category VARCHAR(255),
     pinned_messages JSONB DEFAULT '[]',
+    initial_messages JSONB DEFAULT '[]',
     admins JSONB DEFAULT '[]',
     entity JSONB DEFAULT NULL,
     quality_reports JSONB DEFAULT '[]',

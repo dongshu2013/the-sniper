@@ -11,12 +11,17 @@ import asyncpg
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
-from telethon.tl.types import ChannelParticipantsAdmins, InputMessagesFilterPinned
+from telethon.tl.types import (
+    ChannelParticipantsAdmins,
+    InputMessagesFilterPinned,
+    Message,
+)
 
 from src.common.config import DATABASE_URL
 from src.common.r2_client import upload_file
 from src.common.types import AccountChatStatus, ChatPhoto, ChatStatus
 from src.common.utils import normalize_chat_id
+from src.helpers.message_helper import should_process, store_messages, to_chat_message
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -26,6 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
+NO_INITIAL_MESSAGES_ID = "no_initial_messages"
 PERMISSION_DENIED_ADMIN_ID = "permission_denied"
 GROUP_UPDATE_INTERVAL = 3600
 
@@ -98,7 +104,14 @@ class GroupProcessor(ProcessorBase):
             pinned_message_ids = await self.get_pinned_messages(dialog)
             logger.info(f"pinned messages: {pinned_message_ids}")
 
-            # 4. get admins
+            # 4. get initial messages
+            logger.info("Getting initial messages...")
+            initial_message_ids = chat_info.get("initial_messages", [])
+            if not initial_message_ids:
+                initial_message_ids = await self.get_initial_messages(dialog)
+                logger.info(f"initial messages: {initial_message_ids}")
+
+            # 5. get admins
             logger.info("Getting admins...")
             admins = chat_info.get("admins", [])
             if admins and admins[0] == PERMISSION_DENIED_ADMIN_ID:
@@ -122,16 +135,10 @@ class GroupProcessor(ProcessorBase):
             )
             await asyncio.sleep(1)
 
-    async def get_pinned_messages(self, dialog: any) -> list[str]:
-        chat_id = normalize_chat_id(dialog.entity.id)
-        pinned_messages = await self.client.get_messages(
-            dialog.entity,
-            filter=InputMessagesFilterPinned,
-            limit=50,
-        )
-        pinned_message_ids = [
-            str(msg.id) for msg in pinned_messages if msg and msg.text
-        ]
+    async def store_unprocessed_messages(
+        self, chat_id: str, messages: list[Optional[Message]]
+    ):
+        message_ids = [str(msg.id) for msg in messages if should_process(msg)]
         existing_messages = await self.pg_conn.fetch(
             """
             SELECT message_id
@@ -139,41 +146,38 @@ class GroupProcessor(ProcessorBase):
             WHERE chat_id = $1 AND message_id = ANY($2)
             """,
             chat_id,
-            pinned_message_ids,
+            message_ids,
         )
         existing_message_ids = {row["message_id"] for row in existing_messages}
-
-        message_ids = []
-        messages_to_insert = []
-        for message in pinned_messages:
-            if message and message.text:
-                message_id = str(message.id)
-                message_ids.append(message_id)
-                if message_id not in existing_message_ids:
-                    from_id = getattr(message, "from_id", {})
-                    sender_id = getattr(from_id, "user_id", None)
-                    messages_to_insert.append(
-                        (
-                            chat_id,
-                            message_id,
-                            message.text,
-                            str(sender_id) if sender_id else None,
-                            int(message.date.timestamp()),
-                        )
-                    )
-
+        messages_to_insert = [
+            to_chat_message(msg)
+            for msg in messages
+            if should_process(msg) and msg.id not in existing_message_ids
+        ]
         if messages_to_insert:
-            logger.info(f"inserting {len(messages_to_insert)} pinned messages")
-            await self.pg_conn.executemany(
-                """
-                INSERT INTO chat_messages (
-                    chat_id, message_id, message_text, sender_id, message_timestamp
-                ) VALUES ($1, $2, $3, $4, $5)
-                """,
-                messages_to_insert,
-            )
-
+            await store_messages(self.pg_conn, messages_to_insert)
         return message_ids
+
+    async def get_initial_messages(self, dialog: any) -> list[str]:
+        messages = await self.client.get_messages(
+            dialog.entity,
+            limit=10,
+        )
+        if not messages:
+            return [NO_INITIAL_MESSAGES_ID]
+        return await self.store_unprocessed_messages(
+            normalize_chat_id(dialog.entity.id), messages
+        )
+
+    async def get_pinned_messages(self, dialog: any) -> list[str]:
+        pinned_messages = await self.client.get_messages(
+            dialog.entity,
+            filter=InputMessagesFilterPinned,
+            limit=50,
+        )
+        return await self.store_unprocessed_messages(
+            normalize_chat_id(dialog.entity.id), pinned_messages
+        )
 
     async def get_admins(self, dialog: any) -> list[str]:
         try:
@@ -234,7 +238,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, admins, photo, updated_at
+            SELECT chat_id, status, admins, photo, initial_messages, updated_at
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -244,6 +248,7 @@ class GroupProcessor(ProcessorBase):
                 "status": row["status"],
                 "admins": json.loads(row["admins"]),
                 "photo": row["photo"],
+                "initial_messages": json.loads(row["initial_messages"]),
                 "updated_at": row["updated_at"],
             }
             for row in rows

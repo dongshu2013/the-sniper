@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     reply_to TEXT,
     topic_id TEXT,
     message_text TEXT NOT NULL,
+    buttons JSONB DEFAULT '[]',
     sender_id TEXT,
     message_timestamp BIGINT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,

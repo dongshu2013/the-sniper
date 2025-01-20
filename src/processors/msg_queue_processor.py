@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 
 from src.common.config import DATABASE_URL, MESSAGE_QUEUE_KEY, REDIS_URL
 from src.common.types import ChatMessage
+from src.helpers.message_helper import store_messages
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -58,38 +59,8 @@ class MessageQueueProcessor(ProcessorBase):
         if not messages:
             return 0
 
-        try:
-            await self.pg_conn.executemany(
-                """
-                INSERT INTO chat_messages (
-                    message_id,
-                    chat_id,
-                    message_text,
-                    reply_to,
-                    topic_id,
-                    sender_id,
-                    message_timestamp
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (chat_id, message_id) DO NOTHING
-                """,
-                [
-                    (
-                        m.message_id,
-                        m.chat_id,
-                        m.message_text,
-                        m.reply_to,
-                        m.topic_id,
-                        m.sender_id,
-                        m.message_timestamp,
-                    )
-                    for m in messages
-                ],
-            )
-            return len(messages)
-        except Exception as e:
-            logger.error(f"Database error: {e}")
-            # Optionally, push failed messages back to Redis
+        # Optionally, push failed messages back to Redis
+        processed = await store_messages(self.pg_conn, messages)
+        if processed != len(messages):
             for msg in messages:
                 await self.redis_client.lpush(MESSAGE_QUEUE_KEY, json.dumps(msg))
-            return 0

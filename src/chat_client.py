@@ -14,7 +14,7 @@ from src.common.config import (
     chat_per_hour_stats_key,
     message_seen_key,
 )
-from src.common.types import ChatMessage
+from src.helpers.message_helper import to_chat_message
 from src.processors.account_heartbeat_processor import AccountHeartbeatProcessor
 from src.processors.group_processor import GroupProcessor
 from src.processors.tg_link_pre_processor import TgLinkPreProcessor
@@ -108,43 +108,21 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
-        message = event.message
-        if not message.is_group or not message.is_channel:
+        raw_message = event.message
+        if not raw_message.is_group or not raw_message.is_channel:
             return
 
-        chat_id = str(message.chat_id)
-        if chat_id.startswith("-100"):
-            chat_id = chat_id[4:]
-
-        message_id = str(message.id)
-        if await redis_client.exists(message_seen_key(chat_id, message_id)):
+        msg = to_chat_message(raw_message)
+        if not msg:
             return
 
-        reply_to = None
-        topic_id = None
-        if message.reply_to:
-            if message.reply_to.forum_topic:
-                if message.reply_to.reply_to_top_id:
-                    reply_to = message.reply_to.reply_to_msg_id
-                    topic_id = message.reply_to.reply_to_top_id
-                else:
-                    topic_id = message.reply_to.reply_to_msg_id
-            else:
-                reply_to = message.reply_to.reply_to_msg_id
+        if await redis_client.exists(message_seen_key(msg.chat_id, msg.message_id)):
+            return
 
-        message_data = ChatMessage(
-            message_id=message_id,
-            chat_id=chat_id,
-            message_text=event.message.text,
-            sender_id=str(event.sender_id),
-            message_timestamp=int(event.date.timestamp()),
-            reply_to=str(reply_to) if reply_to else None,
-            topic_id=str(topic_id) if topic_id else None,
-        )
         pipeline = redis_client.pipeline()
-        pipeline.incr(chat_per_hour_stats_key(chat_id, "messages_count"))
-        pipeline.set(message_seen_key(chat_id, message_id), "true")
-        pipeline.lpush(MESSAGE_QUEUE_KEY, message_data.model_dump_json())
+        pipeline.incr(chat_per_hour_stats_key(msg.chat_id, "messages_count"))
+        pipeline.set(message_seen_key(msg.chat_id, msg.message_id), "true")
+        pipeline.lpush(MESSAGE_QUEUE_KEY, msg.model_dump_json())
         await pipeline.execute()
 
 

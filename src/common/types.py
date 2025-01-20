@@ -66,6 +66,11 @@ class ChatMetadata(BaseModel):
     processed_at: int
 
 
+class ChatMessageButton(BaseModel):
+    text: str
+    url: Optional[str]
+
+
 class ChatMessage(BaseModel):
     message_id: str
     chat_id: str
@@ -73,11 +78,13 @@ class ChatMessage(BaseModel):
     sender_id: Optional[str] = None
     reply_to: Optional[str] = None
     topic_id: Optional[str] = None
+    buttons: list[ChatMessageButton] = []
     message_timestamp: int
 
 
 class Account(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
     id: int
     tg_id: str
     api_id: str
