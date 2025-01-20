@@ -3,7 +3,6 @@ import imghdr
 import json
 import logging
 import os
-import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -73,14 +72,14 @@ class GroupProcessor(ProcessorBase):
                 },
             )
 
-            updated_at_epoch = int(
-                chat_info.get("updated_at", datetime.now()).timestamp()
-            )
-            if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
-                logger.info(
-                    f"skipping group {dialog.name} because it was updated recently"
-                )
-                continue
+            # updated_at_epoch = int(
+            #     chat_info.get("updated_at", datetime.now()).timestamp()
+            # )
+            # if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
+            #     logger.info(
+            #         f"skipping group {dialog.name} because it was updated recently"
+            #     )
+            #     continue
 
             logger.info(f"processing group {dialog.name}")
             status = chat_info.get("status", ChatStatus.EVALUATING.value)
@@ -110,6 +109,8 @@ class GroupProcessor(ProcessorBase):
             if not initial_message_ids:
                 initial_message_ids = await self.get_initial_messages(dialog)
                 logger.info(f"initial messages: {initial_message_ids}")
+            else:
+                logger.info(f"initial messages already fetched: {initial_message_ids}")
 
             # 5. get admins
             logger.info("Getting admins...")
@@ -122,16 +123,15 @@ class GroupProcessor(ProcessorBase):
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
-                (
-                    chat_id,
-                    dialog.name or None,
-                    description or None,
-                    getattr(dialog.entity, "username", None),
-                    getattr(dialog.entity, "participants_count", 0),
-                    photo.model_dump_json() if photo else None,
-                    json.dumps(pinned_message_ids),
-                    json.dumps(admins),
-                )
+                chat_id,
+                dialog.name or None,
+                getattr(dialog.entity, "username", None),
+                description or None,
+                photo.model_dump_json() if photo else None,
+                getattr(dialog.entity, "participants_count", 0),
+                json.dumps(pinned_message_ids),
+                json.dumps(initial_message_ids),
+                json.dumps(admins),
             )
             await asyncio.sleep(1)
 
@@ -255,42 +255,45 @@ class GroupProcessor(ProcessorBase):
             for row in rows
         }
 
-    async def _update_metadata(self, update: tuple):
+    async def _update_metadata(
+        self,
+        chat_id: str,
+        name: str,
+        username: str,
+        about: str,
+        photo: str,
+        participants_count: int,
+        pinned_messages: list[str],
+        initial_messages: list[str],
+        admins: list[str],
+    ):
         """Update chat metadata."""
         try:
-            (
-                chat_id,
-                name,
-                about,
-                username,
-                participants_count,
-                photo,
-                pinned_messages,
-                admins,
-            ) = update
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, about, username, participants_count,
-                    pinned_messages, photo, admins, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP)
+                    chat_id, name, username, about, photo, participants_count,
+                    pinned_messages, initial_messages, admins, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     about = EXCLUDED.about,
                     username = EXCLUDED.username,
                     participants_count = EXCLUDED.participants_count,
                     pinned_messages = EXCLUDED.pinned_messages,
+                    initial_messages = EXCLUDED.initial_messages,
                     updated_at = CURRENT_TIMESTAMP,
                     photo = EXCLUDED.photo,
-                    admins = EXCLUDED.admins
+                    admins = EXCLUDED.admins,
                 """,
                 chat_id,
                 name,
-                about,
                 username,
+                about,
+                photo,
                 participants_count,
                 pinned_messages,
-                photo,
+                initial_messages,
                 admins,
             )
         except Exception as e:
