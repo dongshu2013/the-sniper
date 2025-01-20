@@ -39,19 +39,21 @@ def to_chat_message(message: Message) -> ChatMessage | None:
     buttons = []
     # Check reply_markup first (raw API property)
     if hasattr(message, "reply_markup") and message.reply_markup:
-        for row in message.reply_markup.rows:
-            for button in row.buttons:
-                buttons.append(
-                    ChatMessageButton(
-                        text=button.text,
-                        url=button.url if hasattr(button, "url") else None,
-                        data=(
-                            button.data.decode("utf-8")
-                            if hasattr(button, "data") and button.data
-                            else None
-                        ),
+        # Handle ReplyKeyboardHide and other markup types that don't have rows
+        if hasattr(message.reply_markup, "rows"):
+            for row in message.reply_markup.rows:
+                for button in row.buttons:
+                    buttons.append(
+                        ChatMessageButton(
+                            text=button.text,
+                            url=button.url if hasattr(button, "url") else None,
+                            data=(
+                                button.data.decode("utf-8")
+                                if hasattr(button, "data") and button.data
+                                else None
+                            ),
+                        )
                     )
-                )
     # Check message.buttons (Telethon's convenience property)
     elif message.buttons:
         for row in message.buttons:
