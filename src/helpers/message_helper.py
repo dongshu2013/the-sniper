@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 
 import asyncpg
-from telethon import Message
+from telethon.tl.types import Message
 
 from src.common.types import ChatMessage, ChatMessageButton
 
