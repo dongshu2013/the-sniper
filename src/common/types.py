@@ -69,6 +69,12 @@ class ChatMetadata(BaseModel):
 class ChatMessageButton(BaseModel):
     text: str
     url: Optional[str]
+    data: Optional[str]
+
+    class Config:
+        json_serialization = {
+            "exclude_none": True,  # Optional: excludes None values from JSON output
+        }
 
 
 class ChatMessage(BaseModel):
@@ -80,6 +86,11 @@ class ChatMessage(BaseModel):
     topic_id: Optional[str] = None
     buttons: list[ChatMessageButton] = []
     message_timestamp: int
+
+    class Config:
+        json_serialization = {
+            "exclude_none": True,  # Optional: excludes None values from JSON output
+        }
 
 
 class Account(BaseModel):

@@ -35,15 +35,38 @@ def to_chat_message(message: Message) -> ChatMessage | None:
         else:
             reply_to = message.reply_to.reply_to_msg_id
 
-    message_buttons = []
-    if message.buttons:
-        message_buttons = [
-            ChatMessageButton(
-                text=getattr(button, "text", ""),
-                url=getattr(button, "url", ""),
-            )
-            for button in message.buttons
-        ]
+    # Convert buttons to a serializable format
+    buttons = []
+    # Check reply_markup first (raw API property)
+    if hasattr(message, "reply_markup") and message.reply_markup:
+        for row in message.reply_markup.rows:
+            for button in row.buttons:
+                buttons.append(
+                    ChatMessageButton(
+                        text=button.text,
+                        url=button.url if hasattr(button, "url") else None,
+                        data=(
+                            button.data.decode("utf-8")
+                            if hasattr(button, "data") and button.data
+                            else None
+                        ),
+                    )
+                )
+    # Check message.buttons (Telethon's convenience property)
+    elif message.buttons:
+        for row in message.buttons:
+            for button in row:
+                buttons.append(
+                    ChatMessageButton(
+                        text=button.text,
+                        url=button.url if hasattr(button, "url") else None,
+                        data=(
+                            button.data.decode("utf-8")
+                            if hasattr(button, "data") and button.data
+                            else None
+                        ),
+                    )
+                )
 
     from_id = getattr(message, "from_id", {})
     sender_id = getattr(from_id, "user_id", None)
@@ -55,17 +78,25 @@ def to_chat_message(message: Message) -> ChatMessage | None:
         message_timestamp=int(message.date.timestamp()),
         reply_to=str(reply_to) if reply_to else None,
         topic_id=str(topic_id) if topic_id else None,
-        buttons=message_buttons,
+        buttons=buttons,
     )
 
 
 def should_process(message: Optional[Message]) -> bool:
-    return message and (message.text or message.buttons)
+    return message and (
+        message.text
+        or message.buttons
+        or (hasattr(message, "reply_markup") and message.reply_markup)
+    )
 
 
-async def store_messages(pg_conn: asyncpg.Connection, messages: list[ChatMessage]):
+async def store_messages(
+    pg_conn: asyncpg.Connection, messages: list[Optional[ChatMessage]]
+):
     if len(messages) == 0:
         return 0
+
+    messages = [m for m in messages if m is not None]
 
     try:
         await pg_conn.executemany(
@@ -92,7 +123,7 @@ async def store_messages(pg_conn: asyncpg.Connection, messages: list[ChatMessage
                     m.topic_id,
                     m.sender_id,
                     m.message_timestamp,
-                    json.dumps(m.buttons),
+                    json.dumps([b.model_dump() for b in m.buttons]),
                 )
                 for m in messages
             ],

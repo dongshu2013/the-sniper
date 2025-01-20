@@ -152,7 +152,7 @@ class GroupProcessor(ProcessorBase):
         messages_to_insert = [
             to_chat_message(msg)
             for msg in messages
-            if should_process(msg) and msg.id not in existing_message_ids
+            if msg.id not in existing_message_ids
         ]
         if messages_to_insert:
             await store_messages(self.pg_conn, messages_to_insert)
@@ -163,6 +163,7 @@ class GroupProcessor(ProcessorBase):
             dialog.entity,
             limit=10,
         )
+        messages = [m for m in messages if m and should_process(m)]
         if not messages:
             return [NO_INITIAL_MESSAGES_ID]
         return await self.store_unprocessed_messages(
