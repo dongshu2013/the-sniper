@@ -3,6 +3,7 @@ import imghdr
 import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -72,14 +73,14 @@ class GroupProcessor(ProcessorBase):
                 },
             )
 
-            # updated_at_epoch = int(
-            #     chat_info.get("updated_at", datetime.now()).timestamp()
-            # )
-            # if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
-            #     logger.info(
-            #         f"skipping group {dialog.name} because it was updated recently"
-            #     )
-            #     continue
+            updated_at_epoch = int(
+                chat_info.get("updated_at", datetime.now()).timestamp()
+            )
+            if updated_at_epoch > int(time.time()) - GROUP_UPDATE_INTERVAL:
+                logger.info(
+                    f"skipping group {dialog.name} because it was updated recently"
+                )
+                continue
 
             logger.info(f"processing group {dialog.name}")
             status = chat_info.get("status", ChatStatus.EVALUATING.value)
@@ -277,14 +278,14 @@ class GroupProcessor(ProcessorBase):
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     name = EXCLUDED.name,
-                    about = EXCLUDED.about,
                     username = EXCLUDED.username,
+                    about = EXCLUDED.about,
+                    photo = EXCLUDED.photo,
                     participants_count = EXCLUDED.participants_count,
                     pinned_messages = EXCLUDED.pinned_messages,
                     initial_messages = EXCLUDED.initial_messages,
-                    updated_at = CURRENT_TIMESTAMP,
-                    photo = EXCLUDED.photo,
                     admins = EXCLUDED.admins,
+                    updated_at = CURRENT_TIMESTAMP
                 """,
                 chat_id,
                 name,
