@@ -356,8 +356,8 @@ class GroupProcessor(ProcessorBase):
         entity = dialog.entity
         if dialog.is_channel:
             if getattr(entity, "megagroup", False):
-                return ChatType.SUPERGROUP.value
+                return ChatType.MEGA_GROUP.value
             elif getattr(entity, "gigagroup", False):
-                return ChatType.GIGAGROUP.value
+                return ChatType.GIGA_GROUP.value
             return ChatType.CHANNEL.value
         return ChatType.GROUP.value
