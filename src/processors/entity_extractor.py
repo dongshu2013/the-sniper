@@ -120,36 +120,6 @@ For VIRTUAL_CAPITAL:
     }
 }
 
-For EVENT:
-{
-    "name": "",
-    "datetime": "",
-    "location": "",
-    "website": "",
-    "social": {
-        "lu.ma": "",
-        "eventbrite": "",
-        "twitter": "",
-        "other": []
-    }
-}
-
-For PROGRAM_COHORT:
-{
-    "name": "",
-    "organizer": "",
-    "website": "",
-    "social": {
-        "twitter": "",
-        "linkedin": ""
-    }
-}
-
-For TECH DISCUSSION:
-{
-    "topic": "", # if there is a major topic, set it to the topic
-}
-
 For all others: null
 
 OUTPUT FORMAT:
