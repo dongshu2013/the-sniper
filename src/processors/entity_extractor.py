@@ -153,9 +153,19 @@ class EntityExtractor(ProcessorBase):
         context = await self._gather_context(chat_metadata, recent_messages)
 
         classification = await self._classify_chat(context)
+        logger.info(f"classification result: {classification}")
         parsed_classification = parse_ai_response(classification, [])
         if not parsed_classification:
             logger.info("no classification found")
+            await self.pg_conn.execute(
+                """
+                UPDATE chat_metadata
+                SET evaluated_at = $1
+                WHERE chat_id = $2
+                """,
+                chat_metadata.chat_id,
+                int(time.time()),
+            )
             return
 
         category = parsed_classification.get("category")
