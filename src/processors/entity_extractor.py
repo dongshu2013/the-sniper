@@ -163,8 +163,8 @@ class EntityExtractor(ProcessorBase):
                 SET evaluated_at = $1
                 WHERE chat_id = $2
                 """,
-                chat_metadata.chat_id,
                 int(time.time()),
+                chat_metadata.chat_id,
             )
             return
 
