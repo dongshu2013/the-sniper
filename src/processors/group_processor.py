@@ -103,9 +103,10 @@ class GroupProcessor(ProcessorBase):
             # 3. update group type
             logger.info("Updating group type...")
             type = chat_info.get("type", ChatType.GROUP.value)
-            if not type:
-                type = await self.get_group_type(dialog)
-                logger.info(f"group type: {type}")
+            new_type = self._get_group_type(dialog)
+            if type != new_type:
+                logger.info(f"group type changed from {type} to {new_type}")
+                type = new_type
 
             # 4. get pinned messages
             logger.info("Getting pinned messages...")
@@ -351,7 +352,7 @@ class GroupProcessor(ProcessorBase):
             logger.error(f"Failed to get photo extension: {e}")
         return ".jpg"
 
-    async def _get_group_type(self, dialog: any) -> str:
+    def _get_group_type(self, dialog: any) -> str:
         entity = dialog.entity
         if dialog.is_channel:
             if getattr(entity, "megagroup", False):
