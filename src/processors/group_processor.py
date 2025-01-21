@@ -19,7 +19,7 @@ from telethon.tl.types import (
 
 from src.common.config import DATABASE_URL
 from src.common.r2_client import upload_file
-from src.common.types import AccountChatStatus, ChatPhoto, ChatStatus
+from src.common.types import AccountChatStatus, ChatPhoto, ChatStatus, ChatType
 from src.common.utils import normalize_chat_id
 from src.helpers.message_helper import should_process, store_messages, to_chat_message
 from src.processors.processor import ProcessorBase
@@ -66,6 +66,7 @@ class GroupProcessor(ProcessorBase):
                 chat_id,
                 {
                     "status": ChatStatus.EVALUATING.value,
+                    "type": ChatType.GROUP.value,
                     "admins": [],
                     "pinned_messages": [],
                     "photo": None,
@@ -99,12 +100,19 @@ class GroupProcessor(ProcessorBase):
             photo = ChatPhoto.model_validate_json(photo) if photo else None
             photo = await self.get_group_photo(dialog, photo)
 
-            # 3. get pinned messages
+            # 3. update group type
+            logger.info("Updating group type...")
+            type = chat_info.get("type", ChatType.GROUP.value)
+            if not type:
+                type = await self.get_group_type(dialog)
+                logger.info(f"group type: {type}")
+
+            # 4. get pinned messages
             logger.info("Getting pinned messages...")
             pinned_message_ids = await self.get_pinned_messages(dialog)
             logger.info(f"pinned messages: {pinned_message_ids}")
 
-            # 4. get initial messages
+            # 5. get initial messages
             logger.info("Getting initial messages...")
             initial_message_ids = chat_info.get("initial_messages", [])
             if not initial_message_ids:
@@ -113,7 +121,7 @@ class GroupProcessor(ProcessorBase):
             else:
                 logger.info(f"initial messages already fetched: {initial_message_ids}")
 
-            # 5. get admins
+            # 6. get admins
             logger.info("Getting admins...")
             admins = chat_info.get("admins", [])
             if admins and admins[0] == PERMISSION_DENIED_ADMIN_ID:
@@ -125,6 +133,7 @@ class GroupProcessor(ProcessorBase):
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
             await self._update_metadata(
                 chat_id,
+                type,
                 dialog.name or None,
                 getattr(dialog.entity, "username", None),
                 description or None,
@@ -240,7 +249,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, admins, photo, initial_messages, updated_at
+            SELECT chat_id, status, type, admins, photo, initial_messages, updated_at
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -248,6 +257,7 @@ class GroupProcessor(ProcessorBase):
         return {
             row["chat_id"]: {
                 "status": row["status"],
+                "type": row["type"],
                 "admins": json.loads(row["admins"]),
                 "photo": row["photo"],
                 "initial_messages": json.loads(row["initial_messages"]),
@@ -259,6 +269,7 @@ class GroupProcessor(ProcessorBase):
     async def _update_metadata(
         self,
         chat_id: str,
+        type: str,
         name: str,
         username: str,
         about: str,
@@ -273,10 +284,11 @@ class GroupProcessor(ProcessorBase):
             await self.pg_conn.execute(
                 """
                 INSERT INTO chat_metadata (
-                    chat_id, name, username, about, photo, participants_count,
+                    chat_id, type, name, username, about, photo, participants_count,
                     pinned_messages, initial_messages, admins, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
+                    type = EXCLUDED.type,
                     name = EXCLUDED.name,
                     username = EXCLUDED.username,
                     about = EXCLUDED.about,
@@ -288,6 +300,7 @@ class GroupProcessor(ProcessorBase):
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 chat_id,
+                type,
                 name,
                 username,
                 about,
@@ -337,3 +350,13 @@ class GroupProcessor(ProcessorBase):
         except Exception as e:
             logger.error(f"Failed to get photo extension: {e}")
         return ".jpg"
+
+    async def _get_group_type(self, dialog: any) -> str:
+        entity = dialog.entity
+        if dialog.is_channel:
+            if getattr(entity, "megagroup", False):
+                return ChatType.SUPERGROUP.value
+            elif getattr(entity, "gigagroup", False):
+                return ChatType.GIGAGROUP.value
+            return ChatType.CHANNEL.value
+        return ChatType.GROUP.value

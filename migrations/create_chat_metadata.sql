@@ -27,3 +27,4 @@ CREATE INDEX idx_chat_metadata_username ON chat_metadata(username);
 CREATE INDEX idx_chat_metadata_is_blocked ON chat_metadata(is_blocked);
 CREATE INDEX idx_chat_metadata_quality_score ON chat_metadata(quality_score);
 CREATE INDEX idx_chat_metadata_evaluated_at ON chat_metadata(evaluated_at);
+CREATE INDEX idx_chat_metadata_type ON chat_metadata(type);
