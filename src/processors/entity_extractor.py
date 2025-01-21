@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from typing import Optional
@@ -36,106 +37,80 @@ CLASSIFICATION GUIDELINES:
 
 PORTAL_GROUP
 - Primary indicators:
-  * Bot verification messages present (e.g., Safeguard, Rose, Captcha)
-  * Minimal organic messages
-  * High frequency of invite links
-  * Keywords: verify, enter, portal, gateway
-  * Limited member interactions
+  * Group name typically contains "Portal"
+  * Contains bot verification messages (Safeguard, Rose, Captcha)
+  * Has "verify" or "human verification" button/link
+  * Only few messages posted by the group owner, no user messages
 
 CRYPTO_PROJECT
 - Primary indicators:
-  * Project-specific updates and announcements
-  * Token price/trading discussions
-  * Development updates
-  * Community support/FAQs
-  * Official team member presence
+  * Smart contract address in description/pinned (e.g., 0x... or Ewdqjj...)
+  * Group name often includes token ticker with $ (e.g., $BOX)
+  * Project details in pinned messages/description
   * Keywords: tokenomics, whitepaper, roadmap
 
-KOL
+KOL (Key Opinion Leader)
 - Primary indicators:
-  * Content centered around specific individual
-  * Personal analysis/insights
-  * Regular expert commentary
-  * Direct KOL engagement
-  * Exclusive content references
+  * Group name/description features specific individual
+  * KOL's username and introduction in description
+  * Keywords: exclusive content, signals, alpha
 
 TRADING
 - Primary indicators:
-  * Technical analysis posts
-  * Entry/exit signals
-  * Price predictions
-  * Trading strategy discussions
-  * Multiple asset discussions
-  * Keywords: TA, signal, entry, exit, SL, TP
+  * Group name contains "trading" or "TA" (any language)
+  * Trading-focused description
+  * Keywords: signals, entry/exit, TA, price targets
 
 VIRTUAL_CAPITAL
 - Primary indicators:
-  * Investment strategy discussions
-  * Portfolio updates
-  * Fund performance metrics
-  * Professional investment terminology
-  * Institutional perspective
+  * Contains "VC" or "Venture Capital" in name/description
+  * Keywords: investment strategy, portfolio, institutional
 
 DEALFLOW
 - Primary indicators:
-  * Project pitches
-  * Investment round discussions
-  * Due diligence requests
-  * Term sheet mentions
-  * Team/valuation analysis
+  * Group name/description mentions "dealflow" or "deals"
+  * Contains pitch deck sharing
+  * Keywords: investment round, valuation, deck, raise
 
 EVENT
 - Primary indicators:
-  * Specific date/time/location details
-  * Speaker announcements
-  * Registration information
-  * Event updates/coordination
-  * Keywords: meetup, conference, hackathon
+  * Group name includes event name/date
+  * Contains event registration links (lu.ma, etc.)
+  * Keywords: meetup, conference, hackathon, RSVP
 
 TECH_DISCUSSION
 - Primary indicators:
-  * Technical protocol discussions
-  * Code sharing/reviews
-  * Architecture debates
-  * Development topics
-  * Specific focus areas: DeFi, NFT, L2, VM, DePIN
-  * Keywords: implementation, protocol, architecture
+  * Group name/description mentions technical focus
+  * Contains code discussions/snippets
+  * Keywords: dev, protocol, smart contract, architecture
 
 FOUNDER
 - Primary indicators:
-  * Startup discussions
-  * Fundraising topics
-  * Team building
-  * Growth strategies
-  * Founder-specific challenges
+  * Group name contains "founder" or "startup"
+  * Founder-focused discussions in description
+  * Keywords: fundraising, startup, founder
 
 PROGRAM_COHORT
 - Primary indicators:
-  * Structured program elements
-  * Cohort announcements
-  * Mentor interactions
-  * Program milestones
-  * Keywords: accelerator, incubator, batch
+  * Program/cohort name in group title
+  * Structured program details in description
+  * Keywords: accelerator, incubator, batch, cohort
 
 NEWS
 - Primary indicators:
-  * Regular news updates
-  * Market analysis
-  * Industry developments
-  * Multiple source sharing
-  * Minimal discussion/more broadcasting
+  * "News" in group name/description
+  * Regular news updates as main content
+  * One-way information sharing format
 
 GENERAL_CRYPTO
 - Primary indicators:
-  * Broad industry discussions
-  * Multiple topics covered
-  * Community-driven discussions
-  * No specific project focus
-  * Wide-ranging crypto topics
+  * No specific project/topic focus
+  * Broad crypto discussions
+  * Multiple topics in recent messages
 
 OTHERS
-- Default category when none above fit
-- Document reasoning for classification as "OTHERS"
+- Use when no other category fits clearly
+- Note specific reason for classification
 
 2. ENTITY DATA SCHEMA:
 
@@ -209,9 +184,8 @@ For all others: null
 
 OUTPUT FORMAT:
 {
-    "type": "CATEGORY_NAME",
+    "category": "CATEGORY_NAME",
     "entity": {entity_object_or_null},
-    "confidence": "HIGH|MEDIUM|LOW",
 }
 """
 # format: on
@@ -234,86 +208,115 @@ class EntityExtractor(ProcessorBase):
             await asyncio.sleep(30)
             return
 
+        logger.info(f"processing group: {chat_metadata.name}")
         recent_messages = await self._get_latest_messages(chat_metadata)
         context = await self._gather_context(chat_metadata, recent_messages)
+        logger.info(f"context: {context}")
+
         classification = await self._classify_chat(context)
         parsed_classification = parse_ai_response(classification, [])
         if not parsed_classification:
             logger.info("no classification found")
             return
 
+        category = parsed_classification.get("category")
+        entity = parsed_classification.get("entity")
         logger.info(f"classification: {parsed_classification}")
 
-        update_query = """
-            UPDATE chat_metadata
-            SET category = $1,
-                entity = $2,
-                evaluated_at = $3
-            WHERE chat_id = $4
-        """
-        await self.pg_conn.execute(
-            update_query,
-            parsed_classification.get("type"),
-            parsed_classification.get("entity"),
-            int(time.time()),
-            chat_metadata.chat_id,
-        )
+        # update_query = """
+        #     UPDATE chat_metadata
+        #     SET category = $1,
+        #         entity = $2,
+        #         evaluated_at = $3
+        #     WHERE chat_id = $4
+        # """
+        # await self.pg_conn.execute(
+        #     update_query,
+        #     category,
+        #     json.dumps(entity),
+        #     int(time.time()),
+        #     chat_metadata.chat_id,
+        # )
 
     async def _get_chat_metadata(self) -> ChatMetadata:
-        select_query = """
-            SELECT id, chat_id, name, about, pinned_messages, initial_messages, admins
+        row = await self.pg_conn.fetchrow(
+            """
+            SELECT id, chat_id, name, username, about, participants_count,
+            pinned_messages, initial_messages, admins
             FROM chat_metadata
             WHERE evaluated_at < $1
             ORDER BY evaluated_at ASC
             LIMIT 1
-        """
-        rows = await self.pg_conn.fetch(
-            select_query, int(time.time()) - EVALUATION_WINDOW_SECONDS
+            """,
+            int(time.time()) - EVALUATION_WINDOW_SECONDS,
         )
-        if not rows:
+        if not row:
             logger.info("no groups to process")
             return
 
+        pinned_messages = json.loads(row["pinned_messages"] or "[]")
+        initial_messages = json.loads(row["initial_messages"] or "[]")
+        admins = json.loads(row["admins"] or "[]")
+
         message_ids = set()
-        for row in rows:
-            message_ids.update(row["pinned_messages"])
-            message_ids.update(row["initial_messages"])
-        rows = await self.pg_conn.fetch(
-            """SELECT chat_id, message_id, reply_to, topic_id,
+        message_ids.update(pinned_messages)
+        message_ids.update(initial_messages)
+        logger.info(f"message_ids: {message_ids}")
+
+        message_rows = await self.pg_conn.fetch(
+            """
+            SELECT chat_id, message_id, reply_to, topic_id,
             sender_id, message_text, buttons, message_timestamp
-            FROM chat_message WHERE id IN ($1)""",
+            FROM chat_messages
+            WHERE chat_id = $1 AND message_id = ANY($2)
+            """,
+            row["chat_id"],
             list(message_ids),
         )
-        messages = {row["message_id"]: db_row_to_chat_message(row) for row in rows}
+        messages = {
+            msg_row["message_id"]: db_row_to_chat_message(msg_row)
+            for msg_row in message_rows
+        }
         return ChatMetadata(
             chat_id=row["chat_id"],
             name=row["name"],
+            username=row["username"],
             about=row["about"],
+            participants_count=row["participants_count"],
             pinned_messages=[
                 messages[message_id]
-                for message_id in row["pinned_messages"]
+                for message_id in pinned_messages
                 if message_id in messages
             ],
             initial_messages=[
                 messages[message_id]
-                for message_id in row["initial_messages"]
+                for message_id in initial_messages
                 if message_id in messages
             ],
-            admins=row["admins"],
+            admins=admins,
         )
 
     async def _get_latest_messages(
         self, chat_metadata: ChatMetadata, limit: int = 10
     ) -> list[ChatMessage]:
-        select_query = """
+        rows = await self.pg_conn.fetch(
+            """
             SELECT chat_id, message_id, reply_to, topic_id,
             sender_id, message_text, buttons, message_timestamp
-            FROM chat_message WHERE chat_id = $1
+            FROM chat_messages
+            WHERE chat_id = $1
             ORDER BY message_timestamp DESC
             LIMIT $2
-        """
-        rows = await self.pg_conn.fetch(select_query, chat_metadata.chat_id, limit)
-        return [db_row_to_chat_message(row) for row in rows].reverse()
+            """,
+            chat_metadata.chat_id,
+            limit,
+        )
+        if not rows:
+            return []
+
+        messages = [db_row_to_chat_message(row) for row in rows]
+        messages.reverse()
+        return messages
 
     async def _gather_context(
         self, chat_metadata: ChatMetadata, recent_messages: list[ChatMessage]
@@ -330,6 +333,8 @@ class EntityExtractor(ProcessorBase):
                 for message in chat_metadata.pinned_messages
             ]
         )
+
+        context_parts.extend([f"\nTotal Members: {chat_metadata.participants_count}"])
 
         context_parts.append("\n\nRecent Messages:\n")
         if len(recent_messages) < len(chat_metadata.initial_messages):

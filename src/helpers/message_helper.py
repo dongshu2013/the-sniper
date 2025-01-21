@@ -137,7 +137,7 @@ async def store_messages(
 
 
 def gen_message_content(message: ChatMessage) -> str:
-    text = message.text
+    text = message.message_text
     for button in message.buttons:
         text += f"\nButton: {button.text} {button.url} {button.data}"
     return text
@@ -150,13 +150,13 @@ async def get_messages(
         """
         SELECT chat_id, message_id, reply_to, topic_id,
         sender_id, message_text, buttons, message_timestamp
-        FROM chat_message
-        WHERE chat_id = $1 AND message_id IN ($2)
+        FROM chat_messages
+        WHERE chat_id = $1 AND message_id = ANY($2)
         """,
         chat_id,
         message_ids,
     )
-    return {row["message_id"]: to_chat_message(row) for row in rows}
+    return {row["message_id"]: db_row_to_chat_message(row) for row in rows}
 
 
 def db_row_to_chat_message(row: dict) -> ChatMessage | None:

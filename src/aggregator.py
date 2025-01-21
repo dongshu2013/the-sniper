@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import logging
 
-# from src.processors.entity_extractor import EntityExtractor
+from src.processors.entity_extractor import EntityExtractor
 from src.processors.msg_queue_processor import MessageQueueProcessor
 from src.processors.tg_link_importer import TgLinkImporter
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 tasks = {
     "tg_link_importer": TgLinkImporter(),
     "msg_queue_processor": MessageQueueProcessor(),
-    #    "entity_extractor": EntityExtractor(),
+    "entity_extractor": EntityExtractor(),
 }
 
 

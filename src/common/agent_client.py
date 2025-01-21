@@ -1,6 +1,10 @@
+import logging
+
 from openai import AsyncOpenAI
 
 from .config import MODEL_NAME, OPENROUTER_API_KEY, OPENROUTER_API_URL
+
+logger = logging.getLogger(__name__)
 
 
 class AgentClient:
@@ -14,6 +18,7 @@ class AgentClient:
             },
         )
         self.model = MODEL_NAME
+        logger.info(f"Using model: {self.model}")
 
     async def chat_completion(self, messages, temperature=0.1, response_format=None):
         response = await self.client.chat.completions.create(
