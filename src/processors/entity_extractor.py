@@ -55,22 +55,10 @@ KOL (Key Opinion Leader)
   * KOL's username and introduction in description
   * Keywords: exclusive content, signals, alpha
 
-TRADING
-- Primary indicators:
-  * Group name contains "trading" or "TA" (any language)
-  * Trading-focused description
-  * Keywords: signals, entry/exit, TA, price targets
-
 VIRTUAL_CAPITAL
 - Primary indicators:
   * Contains "VC" or "Venture Capital" in name/description
   * Keywords: investment strategy, portfolio, institutional
-
-DEALFLOW
-- Primary indicators:
-  * Group name/description mentions "dealflow" or "deals"
-  * Contains pitch deck sharing
-  * Keywords: investment round, valuation, deck, raise
 
 EVENT
 - Primary indicators:
@@ -89,24 +77,6 @@ FOUNDER
   * Group name contains "founder" or "startup"
   * Founder-focused discussions in description
   * Keywords: fundraising, startup, founder
-
-PROGRAM_COHORT
-- Primary indicators:
-  * Program/cohort name in group title
-  * Structured program details in description
-  * Keywords: accelerator, incubator, batch, cohort
-
-NEWS
-- Primary indicators:
-  * "News" in group name/description
-  * Regular news updates as main content
-  * One-way information sharing format
-
-GENERAL_CRYPTO
-- Primary indicators:
-  * No specific project/topic focus
-  * Broad crypto discussions
-  * Multiple topics in recent messages
 
 OTHERS
 - Use when no other category fits clearly
@@ -208,7 +178,7 @@ class EntityExtractor(ProcessorBase):
             await asyncio.sleep(30)
             return
 
-        logger.info(f"processing group: {chat_metadata.name}")
+        logger.info(f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}")
         recent_messages = await self._get_latest_messages(chat_metadata)
         context = await self._gather_context(chat_metadata, recent_messages)
         logger.info(f"context: {context}")
@@ -261,7 +231,6 @@ class EntityExtractor(ProcessorBase):
         message_ids = set()
         message_ids.update(pinned_messages)
         message_ids.update(initial_messages)
-        logger.info(f"message_ids: {message_ids}")
 
         message_rows = await self.pg_conn.fetch(
             """
