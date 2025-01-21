@@ -17,6 +17,13 @@ class EntityType(Enum):
     UNKNOWN = "unknown"
 
 
+class ChatType(Enum):
+    CHANNEL = "channel"
+    GIGA_GROUP = "giga_group"
+    MEGA_GROUP = "mega_group"
+    GROUP = "group"
+
+
 class TgLinkStatus(Enum):
     PENDING_PRE_PROCESSING = "pending_pre_processing"
     PENDING_PROCESSING = "pending_processing"
@@ -58,14 +65,6 @@ class MemeCoinEntity(BaseModel):
     source_link: Optional[str]
 
 
-class ChatMetadata(BaseModel):
-    chat_id: str
-    name: str
-    about: Optional[str]
-    participants_count: int
-    processed_at: int
-
-
 class ChatMessageButton(BaseModel):
     text: str
     url: Optional[str]
@@ -91,6 +90,17 @@ class ChatMessage(BaseModel):
         json_serialization = {
             "exclude_none": True,  # Optional: excludes None values from JSON output
         }
+
+
+class ChatMetadata(BaseModel):
+    chat_id: str
+    name: str
+    about: Optional[str]
+    username: Optional[str]
+    participants_count: int
+    pinned_messages: list[ChatMessage] = []
+    initial_messages: list[ChatMessage] = []
+    admins: list[str] = []
 
 
 class Account(BaseModel):

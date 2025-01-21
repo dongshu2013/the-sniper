@@ -10,12 +10,14 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     pinned_messages JSONB DEFAULT '[]',
     initial_messages JSONB DEFAULT '[]',
     admins JSONB DEFAULT '[]',
+    type VARCHAR(255) DEFAULT 'group',
     category VARCHAR(255),
     entity JSONB DEFAULT NULL,
     quality_reports JSONB DEFAULT '[]',
     quality_score DECIMAL(4,2) DEFAULT 0,
     is_blocked BOOLEAN DEFAULT FALSE, -- deprecated
     status VARCHAR(255) DEFAULT 'evaluating',
+    evaluated_at BIGINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -24,3 +26,4 @@ CREATE INDEX idx_chat_metadata_chat_id ON chat_metadata(chat_id);
 CREATE INDEX idx_chat_metadata_username ON chat_metadata(username);
 CREATE INDEX idx_chat_metadata_is_blocked ON chat_metadata(is_blocked);
 CREATE INDEX idx_chat_metadata_quality_score ON chat_metadata(quality_score);
+CREATE INDEX idx_chat_metadata_evaluated_at ON chat_metadata(evaluated_at);

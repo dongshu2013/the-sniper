@@ -37,38 +37,19 @@ def to_chat_message(message: Message) -> ChatMessage | None:
 
     # Convert buttons to a serializable format
     buttons = []
-    # Check reply_markup first (raw API property)
-    if hasattr(message, "reply_markup") and message.reply_markup:
-        # Handle ReplyKeyboardHide and other markup types that don't have rows
-        if hasattr(message.reply_markup, "rows"):
-            for row in message.reply_markup.rows:
-                for button in row.buttons:
-                    buttons.append(
-                        ChatMessageButton(
-                            text=button.text,
-                            url=button.url if hasattr(button, "url") else None,
-                            data=(
-                                button.data.decode("utf-8")
-                                if hasattr(button, "data") and button.data
-                                else None
-                            ),
-                        )
-                    )
-    # Check message.buttons (Telethon's convenience property)
-    elif message.buttons:
-        for row in message.buttons:
-            for button in row:
-                buttons.append(
-                    ChatMessageButton(
-                        text=button.text,
-                        url=button.url if hasattr(button, "url") else None,
-                        data=(
-                            button.data.decode("utf-8")
-                            if hasattr(button, "data") and button.data
-                            else None
-                        ),
-                    )
+    for row in message.buttons or []:
+        for button in row:
+            buttons.append(
+                ChatMessageButton(
+                    text=button.text,
+                    url=button.url if hasattr(button, "url") else None,
+                    data=(
+                        button.data.decode("utf-8")
+                        if hasattr(button, "data") and button.data
+                        else None
+                    ),
                 )
+            )
 
     from_id = getattr(message, "from_id", {})
     sender_id = getattr(from_id, "user_id", None)
@@ -134,3 +115,47 @@ async def store_messages(
     except Exception as e:
         logger.error(f"Database error: {e}")
         return 0
+
+
+def gen_message_content(message: ChatMessage) -> str:
+    text = message.text
+    for button in message.buttons:
+        text += f"\nButton: {button.text} {button.url} {button.data}"
+    return text
+
+
+async def get_messages(
+    pg_conn: asyncpg.Connection, chat_id: str, message_ids: list[str]
+) -> dict[str, ChatMessage]:
+    rows = await pg_conn.fetch(
+        """
+        SELECT chat_id, message_id, reply_to, topic_id,
+        sender_id, message_text, buttons, message_timestamp
+        FROM chat_message
+        WHERE chat_id = $1 AND message_id IN ($2)
+        """,
+        chat_id,
+        message_ids,
+    )
+    return {row["message_id"]: to_chat_message(row) for row in rows}
+
+
+def db_row_to_chat_message(row: dict) -> ChatMessage | None:
+    buttons = [
+        ChatMessageButton(
+            text=button["text"],
+            url=button["url"],
+            data=button["data"],
+        )
+        for button in json.loads(row["buttons"])
+    ]
+    return ChatMessage(
+        chat_id=row["chat_id"],
+        message_id=row["message_id"],
+        reply_to=row["reply_to"],
+        topic_id=row["topic_id"],
+        sender_id=row["sender_id"],
+        message_text=row["message_text"],
+        buttons=buttons,
+        message_timestamp=row["message_timestamp"],
+    )

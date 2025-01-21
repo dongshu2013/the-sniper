@@ -15,8 +15,11 @@ class AgentClient:
         )
         self.model = MODEL_NAME
 
-    async def chat_completion(self, messages):
+    async def chat_completion(self, messages, temperature=0.1, response_format=None):
         response = await self.client.chat.completions.create(
-            model=self.model, messages=messages, temperature=0.7
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            response_format=response_format,
         )
-        return response.model_dump()
+        return response.choices[0].message.content
