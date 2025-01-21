@@ -13,10 +13,11 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     type VARCHAR(255) DEFAULT 'group',
     category VARCHAR(255),
     entity JSONB DEFAULT NULL,
-    quality_reports JSONB DEFAULT '[]',
+    quality_reports JSONB DEFAULT '[]', -- deprecated
     quality_score DECIMAL(4,2) DEFAULT 0,
-    is_blocked BOOLEAN DEFAULT FALSE, -- deprecated
-    status VARCHAR(255) DEFAULT 'evaluating',
+    ai_about TEXT DEFAULT '',
+    is_blocked BOOLEAN DEFAULT FALSE,
+    status VARCHAR(255) DEFAULT 'evaluating', -- deprecated
     evaluated_at BIGINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

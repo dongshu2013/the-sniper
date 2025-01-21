@@ -223,20 +223,20 @@ class EntityExtractor(ProcessorBase):
         entity = parsed_classification.get("entity")
         logger.info(f"classification: {parsed_classification}")
 
-        # update_query = """
-        #     UPDATE chat_metadata
-        #     SET category = $1,
-        #         entity = $2,
-        #         evaluated_at = $3
-        #     WHERE chat_id = $4
-        # """
-        # await self.pg_conn.execute(
-        #     update_query,
-        #     category,
-        #     json.dumps(entity),
-        #     int(time.time()),
-        #     chat_metadata.chat_id,
-        # )
+        update_query = """
+            UPDATE chat_metadata
+            SET category = $1,
+                entity = $2,
+                evaluated_at = $3
+            WHERE chat_id = $4
+        """
+        await self.pg_conn.execute(
+            update_query,
+            category,
+            json.dumps(entity),
+            int(time.time()),
+            chat_metadata.chat_id,
+        )
 
     async def _get_chat_metadata(self) -> ChatMetadata:
         row = await self.pg_conn.fetchrow(
