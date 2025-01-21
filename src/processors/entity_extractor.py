@@ -151,7 +151,6 @@ class EntityExtractor(ProcessorBase):
         logger.info(f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}")
         recent_messages = await self._get_latest_messages(chat_metadata)
         context = await self._gather_context(chat_metadata, recent_messages)
-        logger.info(f"context: {context}")
 
         classification = await self._classify_chat(context)
         parsed_classification = parse_ai_response(classification, [])
