@@ -22,7 +22,6 @@ from src.common.r2_client import upload_file
 from src.common.types import AccountChatStatus, ChatPhoto, ChatStatus, ChatType
 from src.common.utils import normalize_chat_id
 from src.helpers.message_helper import should_process, store_messages, to_chat_message
-from src.helpers.quality_evaluation_processor import evaluate_chat_quality
 from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
@@ -73,8 +72,6 @@ class GroupProcessor(ProcessorBase):
                     "pinned_messages": [],
                     "photo": None,
                     "updated_at": datetime.now() - timedelta(hours=2),
-                    "category": None,
-                    "evaluated_at": 0,
                 },
             )
 
@@ -137,14 +134,6 @@ class GroupProcessor(ProcessorBase):
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
 
-
-            # 7. Evaluate chat quality
-            evaluated_at = chat_info.get("evaluated_at", 0)
-            if evaluated_at < int(time.time()) - QUALITY_EVALUATION_INTERVAL:
-                logger.info("Evaluating chat quality...")
-                quality_score = await evaluate_chat_quality(dialog, chat_info)
-                logger.info(f"quality score: {quality_score}")
-
             await self._update_metadata(
                 chat_id,
                 type,
@@ -156,7 +145,6 @@ class GroupProcessor(ProcessorBase):
                 json.dumps(pinned_message_ids),
                 json.dumps(initial_message_ids),
                 json.dumps(admins),
-                quality_score,
             )
             await asyncio.sleep(1)
 
@@ -264,7 +252,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, type, admins, photo, initial_messages, updated_at, category, evaluated_at
+            SELECT chat_id, status, type, admins, photo, initial_messages, updated_at
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -277,8 +265,6 @@ class GroupProcessor(ProcessorBase):
                 "photo": row["photo"],
                 "initial_messages": json.loads(row["initial_messages"]),
                 "updated_at": row["updated_at"],
-                "category": row["category"],
-                "evaluated_at": row["evaluated_at"],
             }
             for row in rows
         }
@@ -295,7 +281,6 @@ class GroupProcessor(ProcessorBase):
         pinned_messages: list[str],
         initial_messages: list[str],
         admins: list[str],
-        quality_score: float,
     ):
         """Update chat metadata."""
         try:
@@ -303,8 +288,8 @@ class GroupProcessor(ProcessorBase):
                 """
                 INSERT INTO chat_metadata (
                     chat_id, type, name, username, about, photo, participants_count,
-                    pinned_messages, initial_messages, admins, quality_score, updated_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+                    pinned_messages, initial_messages, admins, updated_at
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP)
                 ON CONFLICT (chat_id) DO UPDATE SET
                     type = EXCLUDED.type,
                     name = EXCLUDED.name,
@@ -315,7 +300,6 @@ class GroupProcessor(ProcessorBase):
                     pinned_messages = EXCLUDED.pinned_messages,
                     initial_messages = EXCLUDED.initial_messages,
                     admins = EXCLUDED.admins,
-                    quality_score = EXCLUDED.quality_score,
                     updated_at = CURRENT_TIMESTAMP
                 """,
                 chat_id,
@@ -328,7 +312,6 @@ class GroupProcessor(ProcessorBase):
                 pinned_messages,
                 initial_messages,
                 admins,
-                quality_score,
             )
         except Exception as e:
             logger.error(f"Failed to update metadata: {e}")
