@@ -32,11 +32,8 @@ async def load_accounts(
             phone=row["phone"],
             status=AccountStatus(row["status"]),
             last_active_at=(
-                int(row["last_active_at"].timestamp())
-                if row["last_active_at"]
-                else None
+                int(row["last_active_at"].timestamp()) if row["last_active_at"] else 0
             ),
-            client=None,
         )
         for row in rows
     ]

@@ -124,6 +124,6 @@ class Account(BaseModel):
     api_hash: str
     phone: str
     status: AccountStatus
-    last_active_at: Optional[int]
-    client: Optional[TelegramClient]
-    ip: Optional[str]
+    last_active_at: int = 0
+    client: Optional[TelegramClient] = None
+    ip: Optional[str] = None

@@ -36,9 +36,10 @@ async def run():
     # Load configs and create clients
     pg_conn = await asyncpg.connect(DATABASE_URL)
     account_ids = ACCOUNT_IDS.split(",") if ACCOUNT_IDS else []
+    logger.info(f"Found pre-defined accounts: {account_ids}")
+    accounts = await init_accounts(pg_conn, account_ids)
 
     try:
-        accounts = await init_accounts(pg_conn, account_ids)
         heartbeat_processor = AccountHeartbeatProcessor(accounts)
         tg_link_processors = [
             TgLinkPreProcessor(account.client) for account in accounts
@@ -103,7 +104,7 @@ async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
                 logger.error("No available proxy to run account")
                 break
             account.ip = proxy.ip
-            logger.info(f"Running account {account.tg_id} on proxy {proxy.ip}")
+            logger.info(f"Running account {account.tg_id} on proxy {proxy}")
             account.client = TelegramClient(
                 session_file,
                 account.api_id,
@@ -111,10 +112,12 @@ async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
                 proxy={
                     "proxy_type": "socks5",
                     "addr": proxy.ip,
-                    "port": proxy.port,
+                    "port": int(proxy.port),
                     "username": proxy.username,
                     "password": proxy.password,
+                    "rdns": True,
                 },
+                use_ipv6=False,
             )
         await account.client.start(phone=account.phone)
         ip_usage[account.ip] += 1
