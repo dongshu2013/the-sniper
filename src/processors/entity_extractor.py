@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 BATCH_SIZE = 10
-EVALUATION_WINDOW_SECONDS = 3600 * 24
+EVALUATION_WINDOW_SECONDS = 3600
 
 # flake8: noqa: E501
 # format: off
@@ -128,6 +128,23 @@ OUTPUT FORMAT:
     "entity": {entity_object_or_null},
 }
 """
+
+ABOUT_PROMPT = """
+You are an expert in analyzing Telegram groups. Your task is to write a concise and informative description about the group based on the provided context.
+
+Guidelines:
+1. Keep the description between 100-200 characters
+2. Focus on:
+   - Main purpose/topic of the group
+   - Activity level and engagement
+   - Key features or unique aspects
+3. Use natural, engaging language
+4. Include relevant facts from pinned messages or description
+5. Avoid speculation or unsupported claims
+
+Write the description in a single paragraph without any special formatting.
+"""
+
 # format: on
 
 
@@ -172,17 +189,23 @@ class EntityExtractor(ProcessorBase):
         entity = parsed_classification.get("entity")
         logger.info(f"classification: {parsed_classification}")
 
+        # Generate ai_about
+        ai_about = await self._generate_ai_about(context)
+        logger.info(f"Generated AI about: {ai_about}")
+
         update_query = """
             UPDATE chat_metadata
             SET category = $1,
                 entity = $2,
-                evaluated_at = $3
-            WHERE chat_id = $4
+                ai_about = $3,
+                evaluated_at = $4
+            WHERE chat_id = $5
         """
         await self.pg_conn.execute(
             update_query,
             category,
             json.dumps(entity),
+            ai_about,
             int(time.time()),
             chat_metadata.chat_id,
         )
@@ -323,3 +346,21 @@ class EntityExtractor(ProcessorBase):
             temperature=0.1,  # Lower temperature for more consistent results
             response_format={"type": "json_object"},  # Ensure JSON response
         )
+
+    async def _generate_ai_about(self, context: str) -> str:
+        """Generate AI description about the group based on context."""
+        try:
+            response = await self.agent_client.chat_completion(
+                messages=[
+                    {"role": "system", "content": ABOUT_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"Please analyze this Telegram group context and write a description:\n\n{context}"
+                    }
+                ],
+                temperature=0.7  # Slightly higher temperature for more creative writing
+            )
+            return response.strip()
+        except Exception as e:
+            logger.error(f"Failed to generate AI about: {e}")
+            return ""
