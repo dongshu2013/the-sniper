@@ -10,17 +10,19 @@ logger = logging.getLogger(__name__)
 
 
 async def load_accounts(
-    pg_conn: asyncpg.Connection, account_ids: list[int]
+    pg_conn: asyncpg.Connection, account_ids: list[int] | None = None
 ) -> list[Account]:
     """Load accounts from database."""
-    rows = await pg_conn.fetch(
-        """
+    select_query = """
         SELECT id, tg_id, api_id, api_hash, phone, status, last_active_at
         FROM accounts
-        WHERE tg_id = ANY($1)
-        """,
-        account_ids,
-    )
+        WHERE status = 'active'
+    """
+    if account_ids:
+        select_query += " AND tg_id = ANY($1)"
+        rows = await pg_conn.fetch(select_query, account_ids)
+    else:
+        rows = await pg_conn.fetch(select_query)
     return [
         Account(
             id=row["id"],
