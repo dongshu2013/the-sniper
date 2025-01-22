@@ -171,7 +171,9 @@ class EntityExtractor(ProcessorBase):
 
         classification = await self._classify_chat(context)
         logger.info(f"classification result: {classification}")
-        parsed_classification = parse_ai_response(classification, [])
+        parsed_classification = parse_ai_response(
+            classification, ["category", "entity"]
+        )
         if not parsed_classification:
             logger.info("no classification found")
             await self.pg_conn.execute(
@@ -324,7 +326,7 @@ class EntityExtractor(ProcessorBase):
         context = "\n".join(filter(None, context_parts))
         return context[:24000]  # Limit total context length to be safe
 
-    async def _classify_chat(self, context: str) -> str:
+    async def _classify_chat(self, context: str) -> str | None:
         return await self.agent_client.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

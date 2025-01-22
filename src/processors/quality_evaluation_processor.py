@@ -4,8 +4,8 @@ import asyncpg
 
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL
-from src.processors.processor import ProcessorBase
 from src.helpers.quality_evaluation_helper import evaluate_chat_qualities
+from src.processors.processor import ProcessorBase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-QUALITY_EVALUATION_INTERVAL_SECONDS=3600 * 24 # 1 day
+QUALITY_EVALUATION_INTERVAL_SECONDS = 3600 * 24  # 1 day
 # QUALITY_EVALUATION_INTERVAL_SECONDS=10 # test 10 seconds
 
 
@@ -27,8 +27,5 @@ class QualityEvaluationProcessor(ProcessorBase):
         if not self.pg_conn:
             self.pg_conn = await asyncpg.connect(DATABASE_URL)
 
-        await self._evaluate_chat_quality()
-
-    async def _evaluate_chat_quality(self):
-        """Evaluate chat quality for groups and update their quality scores."""
+        logger.info("Evaluating chat quality")
         await evaluate_chat_qualities(self.pg_conn, self.agent_client)
