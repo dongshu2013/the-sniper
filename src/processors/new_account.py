@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 import asyncpg
+import phonenumbers
 import redis.asyncio as Redis
 from pydantic import BaseModel
 from telethon import TelegramClient
@@ -32,6 +33,21 @@ class NewAccountRequest(BaseModel):
     phone: str
 
 
+def normalize_phone(phone: str) -> str | None:
+    try:
+        # Parse phone number (assuming international format if no region specified)
+        parsed = phonenumbers.parse(phone)
+
+        # Check if the number is valid
+        if not phonenumbers.is_valid_number(parsed):
+            return None
+
+        # Format in E.164 format (+123456789)
+        return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+    except phonenumbers.NumberParseException:
+        return None
+
+
 class NewAccountProcessor(ProcessorBase):
     def __init__(self):
         super().__init__(interval=1)
@@ -49,6 +65,12 @@ class NewAccountProcessor(ProcessorBase):
                 break
 
             request = NewAccountRequest.model_validate_json(request)
+            normalized_phone = normalize_phone(request.phone)
+            if not normalized_phone:
+                logger.error(f"Invalid phone number format: {request.phone}")
+                continue
+
+            request.phone = normalized_phone
             old_task = self.tasks.get(request.phone)
             if old_task:
                 old_task.cancel()
@@ -85,6 +107,7 @@ class NewAccountProcessor(ProcessorBase):
             for _ in range(300):  # wait for 5 minutes
                 code = await self.redis_client.get(phone_code_key(request.phone))
                 if code:
+                    logger.info(f"Got phone code for {request.phone}")
                     break
                 await asyncio.sleep(1)  # Cancellation can happen here
 
@@ -92,17 +115,20 @@ class NewAccountProcessor(ProcessorBase):
                 logger.error(f"Failed to get phone code for {request.phone}")
                 return
 
+            logger.info(f"Signing in to {request.phone}")
             await client.sign_in(
                 phone=request.phone, code=code, phone_code_hash=phone_code_hash
             )
             me = await client.get_me()
             tg_id = str(me.id)
+            logger.info(f"Uploading session file for {tg_id}({request.phone})")
             await upload_session_file(tg_id, f"{session}.session")
 
             username = me.username
             fullname = (
                 me.first_name + f" {me.last_name}" if me.last_name else me.first_name
             )
+            logger.info(f"Adding new account for {username} (ID: {tg_id})")
             await self.add_new_account(
                 tg_id,
                 username,

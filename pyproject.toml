@@ -20,6 +20,7 @@ cloudscraper = "^1.2.71"
 boto3 = "1.26.137"
 
 async-timeout = "^5.0.1"
+phonenumbers = "^8.13.53"
 [tool.poetry.group.dev.dependencies]
 black = "^24.1.0"
 isort = "^5.13.0"
