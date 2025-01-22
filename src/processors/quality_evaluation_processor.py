@@ -13,10 +13,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+QUALITY_EVALUATION_INTERVAL_SECONDS=3600 * 24 # 1 day
+# QUALITY_EVALUATION_INTERVAL_SECONDS=10 # test 10 seconds
+
 
 class QualityEvaluationProcessor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=1)
+        super().__init__(interval=QUALITY_EVALUATION_INTERVAL_SECONDS)
         self.pg_conn = None
         self.agent_client = AgentClient()
 
