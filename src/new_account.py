@@ -36,20 +36,6 @@ async def create_new_account(api_id: str, api_hash: str, phone: str):
         # Connect to database
         conn = await asyncpg.connect(DATABASE_URL)
 
-        # Insert account data
-        await conn.execute(
-            """
-            INSERT INTO accounts (tg_id, username, api_id, api_hash, phone, fullname)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """,
-            tg_id,
-            username,
-            api_id,
-            api_hash,
-            phone,
-            fullname,
-        )
-
         # Upload session file
         await upload_session_file(tg_id, f"NEW_SESSION_{phone}.session")
 
