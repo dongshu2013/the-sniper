@@ -32,19 +32,14 @@ If it looks like a shitcoin, smells like a shitcoin, and its price moves like a 
 USER_PROMPT = """
 Create a tweet to judge this crypto community based on the following context:
 
-Community Context:
-{community_intro}
-
-Current Time: {current_time}
+{context}
 
 Requirements:
-1. Based on the time of day(0-23 hours), you can say something like "Morning" or "Evening" to start the tweet
-2. Based on the score and summary, praise the community if the score is high, or criticize if the score is low
+1. Based on the time of day(0-23 hours), if it's morning or evening, you can say something like "Morning" or "Evening" to start the tweet
+2. Based on the score and summary, praise the community if the score is above 7, or criticize harshly if the score is below 5
 3. Do not explain or intro the community in the tweet, assume everyone knows who it is, you can refer the name and twitter of the community in the tweet
 4. Be creative and opinionated about the tweet, but keep it under 200 characters
 5. Make it feel personal and authentic
-
-Note: Generate the complete tweet without any template variables.
 """
 
 # format: on

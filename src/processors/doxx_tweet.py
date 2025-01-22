@@ -57,18 +57,33 @@ class DoxxTweetProcessor(ProcessorBase):
         if not chat:
             return
 
+        logger.info(f"Getting chat: {chat}")
         latest_tweets = await self.get_last_10_tweets()
         if not await should_tweeet(latest_tweets):
             return
 
         la_tz = pytz.timezone("America/Los_Angeles")
         current_time = datetime.now(la_tz).strftime("%Y-%m-%d %H:%M:%S")
-        community_intro = format_entity_info(chat)
+        about = chat.get("about", None) or chat.get("about", "No Datq")
+        entity = format_entity_info(chat)
+        context = f"""
+Community Basic Info:
+Group Name: {chat["name"]}
+Description: {about}
+Category: {chat["category"]}
 
-        user_prompt = USER_PROMPT.format(
-            community_intro=community_intro,
-            current_time=current_time,
-        )
+Entity Extracted from group:
+{entity}
+
+Quality Score:
+{chat["quality_score"]}
+
+Current Time:
+{current_time}
+"""
+
+        logger.info(f"Context: {context}")
+        user_prompt = USER_PROMPT.format(context=context)
         tweet_text = await agent.chat_completion(
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -121,19 +136,24 @@ def format_entity_info(chat: dict) -> str:
         chat: A dictionary containing chat metadata with an 'entity' field
 
     Returns:
-        A formatted string containing entity information
+        A formatted string containing entity information with indented nested fields
     """
     entity_info = ""
     if chat["entity"]:
         entity = json.loads(chat["entity"])
         if isinstance(entity, dict):
-            if "name" in entity:
-                entity_info += f"{entity['name']}\n"
-            if "social" in entity and isinstance(entity["social"], dict):
-                if "twitter" in entity["social"] and entity["social"]["twitter"]:
-                    entity_info += (
-                        f"Twitter: @{entity['social']['twitter'].split('/')[-1]}\n"
-                    )
+
+            def format_dict(d, indent=0):
+                result = ""
+                for key, value in d.items():
+                    if isinstance(value, dict):
+                        result += " " * indent + f"{key}:\n"
+                        result += format_dict(value, indent + 2)
+                    elif value:  # Only add non-empty values
+                        result += " " * indent + f"{key}: {value}\n"
+                return result
+
+            entity_info = format_dict(entity)
     return entity_info
 
 
@@ -152,6 +172,7 @@ async def get_random_top_quality_chat(pg_conn: asyncpg.Connection) -> dict:
     AND quality_score > 0
     AND entity IS NOT NULL
     AND entity != 'null'
+    AND category = 'CRYPTO_PROJECT'
     ORDER BY RANDOM()
     LIMIT 1
     """
