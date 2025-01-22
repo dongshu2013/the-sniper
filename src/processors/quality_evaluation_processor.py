@@ -14,7 +14,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 QUALITY_EVALUATION_INTERVAL_SECONDS = 3600 * 24  # 1 day
-# QUALITY_EVALUATION_INTERVAL_SECONDS=10 # test 10 seconds
 
 
 class QualityEvaluationProcessor(ProcessorBase):

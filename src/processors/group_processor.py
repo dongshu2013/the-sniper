@@ -35,7 +35,6 @@ NO_INITIAL_MESSAGES_ID = "no_initial_messages"
 PERMISSION_DENIED_ADMIN_ID = "permission_denied"
 GROUP_UPDATE_INTERVAL = 3600
 
-QUALITY_EVALUATION_INTERVAL = 86400 # 1 day
 
 class GroupProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient):
