@@ -127,3 +127,8 @@ class Account(BaseModel):
     last_active_at: int = 0
     client: Optional[TelegramClient] = None
     ip: Optional[str] = None
+
+
+class Tweet(BaseModel):
+    text: str
+    posted_at: int

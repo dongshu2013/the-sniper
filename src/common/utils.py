@@ -5,7 +5,10 @@ import re
 logger = logging.getLogger(__name__)
 
 
-def parse_ai_response(response: str, fields: list[str] = None) -> dict:
+def parse_ai_response(response: str | None, fields: list[str] = None) -> dict:
+    if not response:
+        return {}
+
     try:
         # First try direct JSON parsing
         return json.loads(response)
@@ -20,7 +23,7 @@ def parse_ai_response(response: str, fields: list[str] = None) -> dict:
             except json.JSONDecodeError:
                 pass
 
-        logger.info("Trying regex to extract JSON")
+        logger.info(f"Trying regex to extract JSON: {response}")
         # Last resort: try to extract using regex
 
         result = {}

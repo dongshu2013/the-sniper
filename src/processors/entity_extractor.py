@@ -47,7 +47,9 @@ class EntityExtractor(ProcessorBase):
 
         classification = await self._classify_chat(context)
         logger.info(f"classification result: {classification}")
-        parsed_classification = parse_ai_response(classification, [])
+        parsed_classification = parse_ai_response(
+            classification, ["category", "entity"]
+        )
         if not parsed_classification:
             logger.info("no classification found")
             await self.pg_conn.execute(
@@ -62,6 +64,7 @@ class EntityExtractor(ProcessorBase):
             return
 
         category = parsed_classification.get("category")
+        description = parsed_classification.get("description", "No Data")
         entity = parsed_classification.get("entity")
         logger.info(f"classification: {parsed_classification}")
 
@@ -69,13 +72,15 @@ class EntityExtractor(ProcessorBase):
             UPDATE chat_metadata
             SET category = $1,
                 entity = $2,
-                evaluated_at = $3
-            WHERE chat_id = $4
+                ai_about = $3,
+                evaluated_at = $4
+            WHERE chat_id = $5
         """
         await self.pg_conn.execute(
             update_query,
             category,
             json.dumps(entity),
+            description,
             int(time.time()),
             chat_metadata.chat_id,
         )
@@ -194,7 +199,7 @@ class EntityExtractor(ProcessorBase):
         context = "\n".join(filter(None, context_parts))
         return context[:24000]  # Limit total context length to be safe
 
-    async def _classify_chat(self, context: str) -> str:
+    async def _classify_chat(self, context: str) -> str | None:
         return await self.agent_client.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -277,7 +282,20 @@ OTHERS
 - Use when no other category fits clearly
 - Note specific reason for classification
 
-2. ENTITY DATA SCHEMA:
+2. DESCRIPTION:
+
+- Write a concise introduction about the group based on the provided context.
+- Keep the description between 100-200 characters
+- Focus on:
+  - Main purpose/topic of the group
+  - Activity level and engagement
+  - Key features or unique aspects
+- Use natural, engaging language
+- Include relevant facts from pinned messages or description
+- Avoid speculation or unsupported claims
+- If you cannot find any relevant information, return "No enough data to evaluate"
+
+3. ENTITY DATA SCHEMA:
 
 For CRYPTO_PROJECT:
 {
@@ -320,6 +338,7 @@ For all others: null
 OUTPUT FORMAT:
 {
     "category": "CATEGORY_NAME",
+    "description": "DESCRIPTION_OF_THE_GROUP",
     "entity": {entity_object_or_null},
 }
 """

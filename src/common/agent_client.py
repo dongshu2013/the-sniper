@@ -20,11 +20,16 @@ class AgentClient:
         self.model = MODEL_NAME
         logger.info(f"Using model: {self.model}")
 
-    async def chat_completion(self, messages, temperature=0.1, response_format=None):
+    async def chat_completion(
+        self, messages, temperature=0.1, response_format=None
+    ) -> str | None:
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=temperature,
             response_format=response_format,
         )
-        return response.choices[0].message.content
+        if response.choices:
+            return response.choices[0].message.content
+        else:
+            return None

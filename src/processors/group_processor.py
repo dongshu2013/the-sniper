@@ -132,6 +132,7 @@ class GroupProcessor(ProcessorBase):
                 logger.info(f"admins: {admins}")
 
             logger.info(f"updating metadata for {chat_id}: {dialog.name}")
+
             await self._update_metadata(
                 chat_id,
                 type,

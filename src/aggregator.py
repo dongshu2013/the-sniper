@@ -4,6 +4,7 @@ import logging
 
 from src.processors.entity_extractor import EntityExtractor
 from src.processors.msg_queue_processor import MessageQueueProcessor
+from src.processors.quality_evaluation_processor import QualityEvaluationProcessor
 from src.processors.tg_link_importer import TgLinkImporter
 
 # Create logger instance
@@ -17,6 +18,7 @@ tasks = {
     "tg_link_importer": TgLinkImporter(),
     "msg_queue_processor": MessageQueueProcessor(),
     "entity_extractor": EntityExtractor(),
+    "quality_evaluation_processor": QualityEvaluationProcessor(),
 }
 
 

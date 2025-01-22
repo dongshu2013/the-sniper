@@ -17,7 +17,7 @@ from src.common.config import (
 from src.common.types import IpType, ProxySettings
 from src.helpers.ip_proxy_helper import MAX_CLIENTS_PER_IP, pick_ip_proxy
 from src.helpers.message_helper import to_chat_message
-from src.processors.account_heartbeat_processor import AccountHeartbeatProcessor
+from src.processors.account_heartbeat import AccountHeartbeatProcessor
 from src.processors.group_processor import GroupProcessor
 from src.processors.tg_link_pre_processor import TgLinkPreProcessor
 
