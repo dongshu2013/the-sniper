@@ -82,7 +82,20 @@ OTHERS
 - Use when no other category fits clearly
 - Note specific reason for classification
 
-2. ENTITY DATA SCHEMA:
+2. DESCRIPTION:
+
+- Write a concise introduction about the group based on the provided context.
+- Keep the description between 100-200 characters
+- Focus on:
+  - Main purpose/topic of the group
+  - Activity level and engagement
+  - Key features or unique aspects
+- Use natural, engaging language
+- Include relevant facts from pinned messages or description
+- Avoid speculation or unsupported claims
+- If you cannot find any relevant information, return "No enough data to evaluate"
+
+3. ENTITY DATA SCHEMA:
 
 For CRYPTO_PROJECT:
 {
@@ -125,26 +138,10 @@ For all others: null
 OUTPUT FORMAT:
 {
     "category": "CATEGORY_NAME",
+    "description": "DESCRIPTION_OF_THE_GROUP",
     "entity": {entity_object_or_null},
 }
 """
-
-ABOUT_PROMPT = """
-You are an expert in analyzing Telegram groups. Your task is to write a concise and informative description about the group based on the provided context.
-
-Guidelines:
-1. Keep the description between 100-200 characters
-2. Focus on:
-   - Main purpose/topic of the group
-   - Activity level and engagement
-   - Key features or unique aspects
-3. Use natural, engaging language
-4. Include relevant facts from pinned messages or description
-5. Avoid speculation or unsupported claims
-
-Write the description in a single paragraph without any special formatting.
-"""
-
 # format: on
 
 
@@ -188,12 +185,9 @@ class EntityExtractor(ProcessorBase):
             return
 
         category = parsed_classification.get("category")
+        description = parsed_classification.get("description", "No Data")
         entity = parsed_classification.get("entity")
         logger.info(f"classification: {parsed_classification}")
-
-        # Generate ai_about
-        ai_about = await self._generate_ai_about(context)
-        logger.info(f"Generated AI about: {ai_about}")
 
         update_query = """
             UPDATE chat_metadata
@@ -207,7 +201,7 @@ class EntityExtractor(ProcessorBase):
             update_query,
             category,
             json.dumps(entity),
-            ai_about,
+            description,
             int(time.time()),
             chat_metadata.chat_id,
         )
@@ -348,21 +342,3 @@ class EntityExtractor(ProcessorBase):
             temperature=0.1,  # Lower temperature for more consistent results
             response_format={"type": "json_object"},  # Ensure JSON response
         )
-
-    async def _generate_ai_about(self, context: str) -> str:
-        """Generate AI description about the group based on context."""
-        try:
-            response = await self.agent_client.chat_completion(
-                messages=[
-                    {"role": "system", "content": ABOUT_PROMPT},
-                    {
-                        "role": "user",
-                        "content": f"Please analyze this Telegram group context and write a description:\n\n{context}",
-                    },
-                ],
-                temperature=0.1,
-            )
-            return response.strip()
-        except Exception as e:
-            logger.error(f"Failed to generate AI about: {e}")
-            return ""
