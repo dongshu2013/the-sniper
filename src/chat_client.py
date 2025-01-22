@@ -14,6 +14,8 @@ from src.common.config import (
     chat_per_hour_stats_key,
     message_seen_key,
 )
+from src.common.types import IpType, ProxySettings
+from src.helpers.ip_proxy_helper import MAX_CLIENTS_PER_IP, pick_ip_proxy
 from src.helpers.message_helper import to_chat_message
 from src.processors.account_heartbeat_processor import AccountHeartbeatProcessor
 from src.processors.group_processor import GroupProcessor
@@ -27,22 +29,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 redis_client = Redis.from_url(REDIS_URL)
+ACCOUNT_IDS = os.getenv("ACCOUNT_IDS", None)
 
 
 async def run():
     # Load configs and create clients
     pg_conn = await asyncpg.connect(DATABASE_URL)
-    account_ids = os.getenv("ACCOUNT_IDS").split(",")
-    if not account_ids:
-        logger.error("No account ids found")
-        return
-
-    accounts = await init_accounts(pg_conn, account_ids)
-    heartbeat_processor = AccountHeartbeatProcessor(accounts)
-    tg_link_processors = [TgLinkPreProcessor(account.client) for account in accounts]
-    group_processors = [GroupProcessor(account.client) for account in accounts]
+    account_ids = ACCOUNT_IDS.split(",") if ACCOUNT_IDS else []
 
     try:
+        accounts = await init_accounts(pg_conn, account_ids)
+        heartbeat_processor = AccountHeartbeatProcessor(accounts)
+        tg_link_processors = [
+            TgLinkPreProcessor(account.client) for account in accounts
+        ]
+        group_processors = [GroupProcessor(account.client) for account in accounts]
+
         all_tasks = [account.client.run_until_disconnected() for account in accounts]
         all_tasks.append(heartbeat_processor.start_processing())
         all_tasks.extend([tg_proc.start_processing() for tg_proc in tg_link_processors])
@@ -76,18 +78,56 @@ async def run():
 
 async def init_accounts(pg_conn: asyncpg.Connection, account_ids: list[int]):
     accounts = await load_accounts(pg_conn, account_ids)
+
+    proxies = await pick_ip_proxy(pg_conn, IpType.DATACENTER, limit=len(accounts))
+    ip_usage = {proxy.ip: 0 for proxy in proxies}
+    ip_usage["localhost"] = 0
+
     for account in accounts:
         logger.info(f"Downloading session file for account {account.tg_id}")
         session_file = await download_session_file(account.tg_id)
         if not session_file:
             logger.error(f"Failed to download session file for account {account.tg_id}")
             continue
-        client = TelegramClient(session_file, account.api_id, account.api_hash)
-        await client.start(phone=account.phone)
-        await register_handlers(pg_conn, client)
+        if ip_usage["localhost"] <= MAX_CLIENTS_PER_IP:
+            account.ip = "localhost"
+            logger.info(f"Running account {account.tg_id} on localhost")
+            account.client = TelegramClient(
+                session_file,
+                account.api_id,
+                account.api_hash,
+            )
+        else:
+            proxy = await proxy_for_account(proxies, ip_usage)
+            if not proxy:
+                logger.error("No available proxy to run account")
+                break
+            account.ip = proxy.ip
+            logger.info(f"Running account {account.tg_id} on proxy {proxy.ip}")
+            account.client = TelegramClient(
+                session_file,
+                account.api_id,
+                account.api_hash,
+                proxy={
+                    "proxy_type": "socks5",
+                    "addr": proxy.ip,
+                    "port": proxy.port,
+                    "username": proxy.username,
+                    "password": proxy.password,
+                },
+            )
+        await account.client.start(phone=account.phone)
+        ip_usage[account.ip] += 1
+        await register_handlers(pg_conn, account.client)
         logger.info(f"Started Telegram client for account {account.tg_id}")
-        account.client = client
     return [acc for acc in accounts if acc.client is not None]
+
+
+async def proxy_for_account(proxies: list[ProxySettings], ip_usage: dict[str, int]):
+    for proxy in proxies:
+        if ip_usage[proxy.ip] <= MAX_CLIENTS_PER_IP:
+            return proxy
+    return None
 
 
 async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient):

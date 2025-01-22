@@ -126,3 +126,4 @@ class Account(BaseModel):
     status: AccountStatus
     last_active_at: Optional[int]
     client: Optional[TelegramClient]
+    ip: Optional[str]

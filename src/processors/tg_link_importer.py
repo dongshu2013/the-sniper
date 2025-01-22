@@ -132,7 +132,8 @@ class TgLinkImporter(ProcessorBase):
         scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
         )
-        proxy = await pick_ip_proxy(self.pg_conn, IpType.RESIDENTIAL)
+        proxies = await pick_ip_proxy(self.pg_conn, IpType.RESIDENTIAL)
+        proxy = proxies[0]
         proxy_url = f"http://{proxy.username}:{proxy.password}@{proxy.ip}:{proxy.port}"
         if os.getenv("PROXY_URL"):
             scraper.proxies = {
