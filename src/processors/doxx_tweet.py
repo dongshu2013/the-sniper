@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import json
 import logging
@@ -45,7 +46,7 @@ agent = AgentClient()
 class DoxxTweetProcessor(ProcessorBase):
     def __init__(self):
         super().__init__(interval=3600 * 3)
-        self.pg_conn = asyncpg.connect(DATABASE_URL)
+        self.pg_conn = None
         self.character = "doxx"
 
     async def process(self, dry_run: bool = False):
@@ -72,7 +73,8 @@ class DoxxTweetProcessor(ProcessorBase):
             [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
-            ]
+            ],
+            temperature=0.7,
         )
         if not tweet_text:
             logger.error("No response from agent")
@@ -179,9 +181,7 @@ async def should_tweeet(latest_tweets: list[Tweet]):
     return latest_tweets[0].posted_at < int(time.time()) - MIN_TWEET_INTERVAL
 
 
-def main():
-    import argparse
-
+async def main():
     parser = argparse.ArgumentParser(description="Run Doxx Twitter bot")
     parser.add_argument(
         "--dry-run",
@@ -189,8 +189,8 @@ def main():
         help="Print tweets instead of posting them",
     )
     args = parser.parse_args()
-    asyncio.run(DoxxTweetProcessor().process(dry_run=args.dry_run))
+    await DoxxTweetProcessor().process(dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
