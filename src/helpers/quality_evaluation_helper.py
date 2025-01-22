@@ -2,7 +2,10 @@ import asyncio
 from datetime import datetime
 import logging
 import time
-from typing import Dict
+from typing import Dict, List
+from asyncio import Queue, Task
+import asyncpg
+from src.common.config import DATABASE_URL
 
 from src.common.utils import parse_ai_response
 from src.helpers.message_helper import db_row_to_chat_message
@@ -81,6 +84,9 @@ Category Alignment Indicators:
 
 # format: on
 
+BATCH_SIZE = 10 
+MAX_CONCURRENT_TASKS = 5  
+
 async def evaluate_chat_qualities(pg_conn, agent_client):
     """Evaluate chat quality for groups and update their quality scores."""
     
@@ -91,7 +97,7 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
         FROM chat_metadata 
         ORDER BY evaluated_at DESC
         LIMIT 1000
-        """,
+        """
     )
     
     if not rows:
@@ -99,105 +105,161 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
         await asyncio.sleep(30)
         return
 
-    quality_scores = {}
-    
+    task_queue = Queue()
     for row in rows:
-        try:
-            chat_id = row['chat_id']
-            category = row['category']
-            chat_type = row['type']
-            
-            # 2. Get recent messages for the chat
-            message_rows = await pg_conn.fetch(
-                """
-                SELECT chat_id, message_id, reply_to, topic_id,
-                    sender_id, message_text, buttons, message_timestamp
-                FROM chat_messages
-                WHERE chat_id = $1
-                ORDER BY message_timestamp DESC
-                LIMIT 500
-                """,
-                chat_id,
+        await task_queue.put(row)
+
+    result_queue = Queue()
+    
+    tasks = []
+    for _ in range(MAX_CONCURRENT_TASKS):
+        task = asyncio.create_task(
+            process_chat_worker(
+                task_queue, 
+                result_queue, 
+                DATABASE_URL,
+                agent_client
             )
-            
-            if not message_rows:
-                continue
-
-            messages = [db_row_to_chat_message(msg_row) for msg_row in message_rows]
-            
-            if len(messages) < MIN_MESSAGES_THRESHOLD:
-                continue
-                
-            # 3. Prepare messages for AI evaluation
-            messages.reverse()  # Only reverse once to get chronological order
-            message_texts = []
-            for msg in messages:
-                message_texts.append(
-                    f"[{datetime.fromtimestamp(msg.message_timestamp).isoformat()}] "
-                    f"User {msg.sender_id}: {msg.message_text}"
-                )
-            
-            messages_text = "\n".join(message_texts)[:16000]  # Limit buffer size
-            
-            # Use AI to evaluate quality
-            response = await agent_client.chat_completion(
-                messages=[
-                    {"role": "system", "content": QUALITY_EVALUATION_PROMPT},
-                    {
-                        "role": "user",
-                        "content": f"Group Category: {category or 'OTHERS'}\nGroup Type: {chat_type}\n\nMessages:\n{messages_text}"
-                    }
-                ],
-                temperature=0.1,
-                response_format={"type": "json_object"}
-            )
-            
-            result = parse_ai_response(response, ["score", "category_alignment"])
-            if result:
-                quality_score = (
-                    float(result["score"]) * QUALITY_SCORE_WEIGHT +
-                    float(result["category_alignment"]) * CATEGORY_ALIGNMENT_WEIGHT
-                )
-                quality_score = round(quality_score, 2)
-                if quality_score > 0:
-                    quality_scores[row['id']] = quality_score
-            else:
-                logger.error(f"Failed to parse AI response for chat {chat_id}")
-                
-        except Exception as e:
-            logger.error(f"Failed to evaluate chat {chat_id}: {str(e)}", exc_info=True)
-            
-    # 4. Bulk update quality scores
-    if quality_scores:
-        await update_chat_qualities(pg_conn, quality_scores)
-        logger.info(f"Successfully updated quality scores for {len(quality_scores)} chats")
-    else:
-        logger.info("No quality scores to update")
-
-
-async def update_chat_qualities(pg_conn, quality_scores: Dict[int, float]) -> None:
-    """Update quality scores for multiple chats in the database."""
-    if not quality_scores:
-        return
-        
-    current_time = int(time.time())
-    update_queries = []
-    for chat_id, score in quality_scores.items():
-        update_queries.append(
-            f"({chat_id}, {score}, {current_time})"
         )
-        
-    update_query = f"""
-        UPDATE chat_metadata AS cm
-        SET 
-            quality_score = v.score,
-            evaluated_at = v.evaluated_at
-        FROM (VALUES {','.join(update_queries)}) AS v(id, score, evaluated_at)
-        WHERE cm.id = v.id
-    """
+        tasks.append(task)
+
+    update_task = asyncio.create_task(
+        update_scores_worker(result_queue, DATABASE_URL) 
+    )
+    
+    await task_queue.join()
+    
+    for task in tasks:
+        task.cancel()
+    
+    await result_queue.join()
+    update_task.cancel()
     
     try:
-        await pg_conn.execute(update_query)
-        logger.info(f"Updated quality scores for {len(quality_scores)} chats")
-    except Exception as e:
-        logger.error(f"Failed to update quality scores: {e}")       
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await update_task
+    except asyncio.CancelledError:
+        pass
+
+async def process_chat_worker(
+    task_queue: Queue,
+    result_queue: Queue,
+    db_url: str, 
+    agent_client
+):
+    """Process the work task of evaluating a single chat"""
+    pg_conn = await asyncpg.connect(db_url)
+    try:
+        while True:
+            try:
+                row = await task_queue.get()
+                
+                chat_id = row['chat_id']
+                category = row['category']
+                chat_type = row['type']
+                
+                # Get messages for evaluation
+                message_rows = await pg_conn.fetch(
+                    """
+                    SELECT chat_id, message_id, reply_to, topic_id,
+                        sender_id, message_text, buttons, message_timestamp
+                    FROM chat_messages
+                    WHERE chat_id = $1
+                    ORDER BY message_timestamp DESC
+                    LIMIT 500
+                    """,
+                    chat_id,
+                )
+                
+                if not message_rows or len(message_rows) < MIN_MESSAGES_THRESHOLD:
+                    task_queue.task_done()
+                    continue
+
+                messages = [db_row_to_chat_message(msg_row) for msg_row in message_rows]
+                
+                # Prepare messages for AI evaluation
+                messages.reverse()
+                message_texts = []
+                for msg in messages:
+                    message_texts.append(
+                        f"[{datetime.fromtimestamp(msg.message_timestamp).isoformat()}] "
+                        f"User {msg.sender_id}: {msg.message_text}"
+                    )
+                
+                messages_text = "\n".join(message_texts)[:16000]
+                
+                # Use AI to evaluate quality
+                response = await agent_client.chat_completion(
+                    messages=[
+                        {"role": "system", "content": QUALITY_EVALUATION_PROMPT},
+                        {
+                            "role": "user",
+                            "content": f"Group Category: {category or 'OTHERS'}\nGroup Type: {chat_type}\n\nMessages:\n{messages_text}"
+                        }
+                    ],
+                    temperature=0.1,
+                    response_format={"type": "json_object"}
+                )
+                
+                if not response:
+                    logger.error(f"No response from AI for chat {chat_id}")
+                    task_queue.task_done()
+                    continue
+                
+                result = parse_ai_response(response, ["score", "category_alignment"])
+                if result:
+                    quality_score = (
+                        float(result["score"]) * QUALITY_SCORE_WEIGHT +
+                        float(result["category_alignment"]) * CATEGORY_ALIGNMENT_WEIGHT
+                    )
+                    quality_score = round(quality_score, 2)
+                    if quality_score > 0:
+                        await result_queue.put((row['id'], quality_score))
+                
+                task_queue.task_done()
+                
+            except Exception as e:
+                logger.error(f"Error processing chat {chat_id}: {e}", exc_info=True)
+                task_queue.task_done()
+    finally:
+        await pg_conn.close()
+
+async def update_scores_worker(result_queue: Queue, db_url: str):
+    """Process the database update task"""
+    pg_conn = await asyncpg.connect(db_url)
+    try:
+        batch: List[tuple] = []
+        current_time = int(time.time())
+        
+        while True:
+            try:
+                chat_id, score = await result_queue.get()
+                batch.append((chat_id, score, current_time))
+                
+                if len(batch) >= BATCH_SIZE or result_queue.empty():
+                    if batch:
+                        update_queries = [f"({id}, {score}, {ts})" for id, score, ts in batch]
+                        update_query = f"""
+                            UPDATE chat_metadata AS cm
+                            SET 
+                                quality_score = v.score,
+                                evaluated_at = v.evaluated_at
+                            FROM (VALUES {','.join(update_queries)}) AS v(id, score, evaluated_at)
+                            WHERE cm.id = v.id
+                        """
+                        
+                        try:
+                            await pg_conn.execute(update_query)
+                            logger.info(f"Updated quality scores for {len(batch)} chats")
+                        except Exception as e:
+                            logger.error(f"Failed to update quality scores: {e}")
+                        
+                        batch = []
+                
+                result_queue.task_done()
+                
+            except Exception as e:
+                logger.error(f"Error in update worker: {e}", exc_info=True)
+                result_queue.task_done()
+    finally:
+        await pg_conn.close()       
