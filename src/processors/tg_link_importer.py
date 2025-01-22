@@ -179,7 +179,7 @@ class TgLinkImporter(ProcessorBase):
                     logger.warning(
                         f"403 error on attempt {attempt + 1}, recreating scraper..."
                     )
-                    self.scraper = self._create_scraper()
+                    self.scraper = await self._create_scraper()
                     await asyncio.sleep(random.uniform(10, 15) * (attempt + 1))
                 else:
                     logger.error(f"Unexpected status code: {response.status_code}")
@@ -189,7 +189,7 @@ class TgLinkImporter(ProcessorBase):
                 logger.error(
                     f"Cloudflare challenge error on attempt {attempt + 1}: {e}"
                 )
-                self.scraper = self._create_scraper()
+                self.scraper = await self._create_scraper()
                 await asyncio.sleep(random.uniform(10, 15) * (attempt + 1))
             except Exception as e:
                 logger.error(
