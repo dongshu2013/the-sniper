@@ -36,6 +36,7 @@ NO_INITIAL_MESSAGES_ID = "no_initial_messages"
 PERMISSION_DENIED_ADMIN_ID = "permission_denied"
 GROUP_UPDATE_INTERVAL = 3600
 
+QUALITY_EVALUATION_INTERVAL = 86400 # 1 day
 
 class GroupProcessor(ProcessorBase):
     def __init__(self, client: TelegramClient):
@@ -73,6 +74,7 @@ class GroupProcessor(ProcessorBase):
                     "photo": None,
                     "updated_at": datetime.now() - timedelta(hours=2),
                     "category": None,
+                    "evaluated_at": 0,
                 },
             )
 
@@ -137,9 +139,11 @@ class GroupProcessor(ProcessorBase):
 
 
             # 7. Evaluate chat quality
-            logger.info("Evaluating chat quality...")
-            quality_score = await evaluate_chat_quality(dialog, chat_info)
-            logger.info(f"quality score: {quality_score}")
+            evaluated_at = chat_info.get("evaluated_at", 0)
+            if evaluated_at < int(time.time()) - QUALITY_EVALUATION_INTERVAL:
+                logger.info("Evaluating chat quality...")
+                quality_score = await evaluate_chat_quality(dialog, chat_info)
+                logger.info(f"quality score: {quality_score}")
 
             await self._update_metadata(
                 chat_id,
@@ -260,7 +264,7 @@ class GroupProcessor(ProcessorBase):
     async def get_all_chat_metadata(self, chat_ids: list[str]) -> dict:
         rows = await self.pg_conn.fetch(
             """
-            SELECT chat_id, status, type, admins, photo, initial_messages, updated_at, category
+            SELECT chat_id, status, type, admins, photo, initial_messages, updated_at, category, evaluated_at
             FROM chat_metadata WHERE chat_id = ANY($1)
             """,
             chat_ids,
@@ -274,6 +278,7 @@ class GroupProcessor(ProcessorBase):
                 "initial_messages": json.loads(row["initial_messages"]),
                 "updated_at": row["updated_at"],
                 "category": row["category"],
+                "evaluated_at": row["evaluated_at"],
             }
             for row in rows
         }
