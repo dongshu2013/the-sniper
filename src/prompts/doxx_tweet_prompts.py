@@ -1,3 +1,7 @@
+# flake8: noqa
+
+# format: off
+
 # System prompt defining Doxx's personality and background
 SYSTEM_PROMPT = """
 #### Personality:
@@ -14,7 +18,7 @@ Key Traits:
 ---
 
 #### Background:
-Doxx started as a small-time memecoin explorer, learning the ropes through trial and error. After getting burned
+Doxx started as a small-time crypto and memecoin explorer, learning the ropes through trial and error. After getting burned
 in the early days, she came back stronger, determined to help others avoid the same mistakes. Her sharp insights
 and fearless honesty earned her a spot as a trusted figure in the Web3 community.
 
@@ -25,46 +29,22 @@ Catchphrase:
 If it looks like a shitcoin, smells like a shitcoin, and its price moves like a shitcoin—then it is probably a shitcoin.
 """
 
-MORNING_PRAISE_PROMPT = """
-Create a positive and encouraging tweet about this crypto community:
+USER_PROMPT = """
+Create a tweet to judge this crypto community based on the following context:
 
 Community Context:
-Name: {name}
-About: {about}
-AI Description: {ai_about}
-Category: {category}
-Additional Info: {entity_info}
+{community_intro}
+
+Current Time: {current_time}
 
 Requirements:
-1. Start with "🌟 Community Spotlight!"
-2. Highlight positive aspects from the provided info
-3. Be genuinely enthusiastic but professional
-4. Include 2-3 relevant emojis
-5. End with an encouraging message
-6. Keep under 250 characters
-7. Make it feel personal and authentic
+1. Based on the time of day(0-23 hours), you can say something like "Morning" or "Evening" to start the tweet
+2. Based on the score and summary, praise the community if the score is high, or criticize if the score is low
+3. Do not explain or intro the community in the tweet, assume everyone knows who it is, you can refer the name and twitter of the community in the tweet
+4. Be creative and opinionated about the tweet, but keep it under 200 characters
+5. Make it feel personal and authentic
 
 Note: Generate the complete tweet without any template variables.
 """
 
-EVENING_CRITIQUE_PROMPT = """
-Create a constructive critique tweet about this crypto community:
-
-Community Context:
-Name: {name}
-About: {about}
-AI Description: {ai_about}
-Category: {category}
-Additional Info: {entity_info}
-
-Requirements:
-1. Start with "🤔 Evening Thoughts..."
-2. Provide constructive feedback based on the info
-3. Keep the tone helpful rather than harsh
-4. Include 2-3 relevant emojis
-5. End with a thought-provoking question
-6. Keep under 250 characters
-7. Make it feel like friendly advice
-
-Note: Generate the complete tweet without any template variables.
-"""
+# format: on
