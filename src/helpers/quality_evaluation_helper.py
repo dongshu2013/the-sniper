@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import logging
 import time
@@ -100,6 +101,8 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
     )
     
     if not rows:
+        logger.info("No chats to evaluate")
+        await asyncio.sleep(30)
         return
 
     quality_scores = {}
