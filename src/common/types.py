@@ -45,6 +45,18 @@ class ChatStatus(Enum):
     BLOCKED = "blocked"
 
 
+class IpType(Enum):
+    DATACENTER = "datacenter"
+    RESIDENTIAL = "residential"
+
+
+class ProxySettings(BaseModel):
+    ip: str
+    port: int
+    username: str
+    password: str
+
+
 class ChatPhoto(BaseModel):
     id: str | int
     path: str

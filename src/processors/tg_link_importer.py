@@ -10,7 +10,13 @@ import cloudscraper
 from cloudscraper.exceptions import CloudflareChallengeError
 
 from src.common.config import DATABASE_URL
-from src.common.types import MemeCoinEntity, MemeCoinEntityMetadata, TgLinkStatus
+from src.common.types import (
+    IpType,
+    MemeCoinEntity,
+    MemeCoinEntityMetadata,
+    TgLinkStatus,
+)
+from src.helpers.ip_proxy_helper import pick_ip_proxy
 from src.processors.processor import ProcessorBase
 
 # flake8: noqa: E501
@@ -122,21 +128,23 @@ class TgLinkImporter(ProcessorBase):
         ]
         self.pg_conn = None
 
-    def _create_scraper(self):
+    async def _create_scraper(self):
         scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
         )
+        proxy = await pick_ip_proxy(self.pg_conn, IpType.RESIDENTIAL)
+        proxy_url = f"http://{proxy.username}:{proxy.password}@{proxy.ip}:{proxy.port}"
         if os.getenv("PROXY_URL"):
             scraper.proxies = {
-                "http": f"http://{os.getenv('PROXY_URL')}",
-                "https": f"http://{os.getenv('PROXY_URL')}",
+                "http": proxy_url,
+                "https": proxy_url,
             }
         return scraper
 
     async def _fetch_with_retry(self, url: str, params: dict) -> Optional[dict]:
         """Fetch data with retry mechanism"""
         if not self.scraper:
-            self.scraper = self._create_scraper()
+            self.scraper = await self._create_scraper()
 
         headers = {
             "Accept": "application/json, text/plain, */*",

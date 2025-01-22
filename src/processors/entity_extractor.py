@@ -23,113 +23,6 @@ logger = logging.getLogger(__name__)
 BATCH_SIZE = 10
 EVALUATION_WINDOW_SECONDS = 3600 * 24
 
-# flake8: noqa: E501
-# format: off
-
-SYSTEM_PROMPT = """
-You are a Web3 community manager analyzing Telegram groups. Your task is to classify groups based on their content and characteristics.
-"""
-
-CLASSIFY_PROMPT = """
-CLASSIFICATION GUIDELINES:
-
-1. Primary Type Categories & Key Indicators:
-
-PORTAL_GROUP
-- Primary indicators:
-  * Group name typically contains "Portal"
-  * Contains bot verification messages (Safeguard, Rose, Captcha)
-  * Has "verify" or "human verification" button/link
-  * Only few messages posted by the group owner, no user messages
-
-CRYPTO_PROJECT
-- Primary indicators:
-  * Smart contract address in description/pinned (e.g., 0x... or Ewdqjj...)
-  * Group name often includes token ticker with $ (e.g., $BOX)
-  * Project details in pinned messages/description
-  * Keywords: tokenomics, whitepaper, roadmap
-
-KOL (Key Opinion Leader)
-- Primary indicators:
-  * Group name/description features specific individual
-  * KOL's username and introduction in description
-  * Keywords: exclusive content, signals, alpha
-
-VIRTUAL_CAPITAL
-- Primary indicators:
-  * Contains "VC" or "Venture Capital" in name/description
-  * Keywords: investment strategy, portfolio, institutional
-
-EVENT
-- Primary indicators:
-  * Group name includes event name/date
-  * Contains event registration links (lu.ma, etc.)
-  * Keywords: meetup, conference, hackathon, RSVP
-
-TECH_DISCUSSION
-- Primary indicators:
-  * Group name/description mentions technical focus
-  * Contains code discussions/snippets
-  * Keywords: dev, protocol, smart contract, architecture
-
-FOUNDER
-- Primary indicators:
-  * Group name contains "founder" or "startup"
-  * Founder-focused discussions in description
-  * Keywords: fundraising, startup, founder
-
-OTHERS
-- Use when no other category fits clearly
-- Note specific reason for classification
-
-2. ENTITY DATA SCHEMA:
-
-For CRYPTO_PROJECT:
-{
-    "ticker": "",
-    "chain": "",
-    "contract": "",
-    "website": "",
-    "name": "",
-    "social": {
-        "twitter": "",
-        "other": []  # other links like gmgn.ai, dexscreener, e.t.c
-    }
-}
-
-For KOL:
-{
-    "name": "",
-    "username": "",
-    "website": "",
-    "social": {
-        "twitter": "",
-        "telegram": "",
-        "linkedin": "",
-        "other": []
-    }
-}
-
-For VIRTUAL_CAPITAL:
-{
-    "name": "",
-    "website": "",
-    "social": {
-        "twitter": "",
-        "linkedin": ""
-    }
-}
-
-For all others: null
-
-OUTPUT FORMAT:
-{
-    "category": "CATEGORY_NAME",
-    "entity": {entity_object_or_null},
-}
-"""
-# format: on
-
 
 class EntityExtractor(ProcessorBase):
     def __init__(self):
@@ -323,3 +216,111 @@ class EntityExtractor(ProcessorBase):
             temperature=0.1,  # Lower temperature for more consistent results
             response_format={"type": "json_object"},  # Ensure JSON response
         )
+
+
+# flake8: noqa: E501
+# format: off
+
+SYSTEM_PROMPT = """
+You are a Web3 community manager analyzing Telegram groups. Your task is to classify groups based on their content and characteristics.
+"""
+
+CLASSIFY_PROMPT = """
+CLASSIFICATION GUIDELINES:
+
+1. Primary Type Categories & Key Indicators:
+
+PORTAL_GROUP
+- Primary indicators:
+  * Group name typically contains "Portal"
+  * Contains bot verification messages (Safeguard, Rose, Captcha)
+  * Has "verify" or "human verification" button/link
+  * Only few messages posted by the group owner, no user messages
+
+CRYPTO_PROJECT
+- Primary indicators:
+  * Smart contract address in description/pinned (e.g., 0x... or Ewdqjj...)
+  * Group name often includes token ticker with $ (e.g., $BOX)
+  * Project details in pinned messages/description
+  * Keywords: tokenomics, whitepaper, roadmap
+
+KOL (Key Opinion Leader)
+- Primary indicators:
+  * Group name/description features specific individual
+  * KOL's username and introduction in description
+  * Keywords: exclusive content, signals, alpha
+
+VIRTUAL_CAPITAL
+- Primary indicators:
+  * Contains "VC" or "Venture Capital" in name/description
+  * Keywords: investment strategy, portfolio, institutional
+
+EVENT
+- Primary indicators:
+  * Group name includes event name/date
+  * Contains event registration links (lu.ma, etc.)
+  * Keywords: meetup, conference, hackathon, RSVP
+
+TECH_DISCUSSION
+- Primary indicators:
+  * Group name/description mentions technical focus
+  * Contains code discussions/snippets
+  * Keywords: dev, protocol, smart contract, architecture
+
+FOUNDER
+- Primary indicators:
+  * Group name contains "founder" or "startup"
+  * Founder-focused discussions in description
+  * Keywords: fundraising, startup, founder
+
+OTHERS
+- Use when no other category fits clearly
+- Note specific reason for classification
+
+2. ENTITY DATA SCHEMA:
+
+For CRYPTO_PROJECT:
+{
+    "ticker": "",
+    "chain": "",
+    "contract": "",
+    "website": "",
+    "name": "",
+    "social": {
+        "twitter": "",
+        "other": []  # other links like gmgn.ai, dexscreener, e.t.c
+    }
+}
+
+For KOL:
+{
+    "name": "",
+    "username": "",
+    "website": "",
+    "social": {
+        "twitter": "",
+        "telegram": "",
+        "linkedin": "",
+        "other": []
+    }
+}
+
+For VIRTUAL_CAPITAL:
+{
+    "name": "",
+    "website": "",
+    "social": {
+        "twitter": "",
+        "linkedin": ""
+    }
+}
+
+For all others: null
+
+OUTPUT FORMAT:
+{
+    "category": "CATEGORY_NAME",
+    "entity": {entity_object_or_null},
+}
+"""
+# format: on
