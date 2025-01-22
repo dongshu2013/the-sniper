@@ -3,8 +3,8 @@ import asyncio
 import logging
 
 from src.processors.entity_extractor import EntityExtractor
-from src.processors.msg_queue_processor import MessageQueueProcessor
-from src.processors.quality_evaluation_processor import QualityEvaluationProcessor
+from src.processors.message_queue import MessageQueueProcessor
+from src.processors.quality_evaluation import QualityEvaluationProcessor
 from src.processors.tg_link_importer import TgLinkImporter
 
 # Create logger instance
