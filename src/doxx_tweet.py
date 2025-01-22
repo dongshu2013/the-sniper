@@ -50,6 +50,29 @@ def normalize_score(value, max_value, min_value=0):
     return ((value - min_value) / (max_value - min_value)) * 10
 
 
+def format_entity_info(chat: dict) -> str:
+    """Format entity information into a readable string.
+    
+    Args:
+        chat: A dictionary containing chat metadata with an 'entity' field
+        
+    Returns:
+        A formatted string containing entity information
+    """
+    entity_info = ""
+    if chat["entity"]:
+        entity = json.loads(chat["entity"])
+        if isinstance(entity, dict):
+            if "name" in entity:
+                entity_info += f"Project: {entity['name']}\n"
+            if "website" in entity and entity["website"]:
+                entity_info += f"Website: {entity['website']}\n"
+            if "social" in entity and isinstance(entity["social"], dict):
+                if "twitter" in entity["social"] and entity["social"]["twitter"]:
+                    entity_info += f"Twitter: @{entity['social']['twitter'].split('/')[-1]}\n"
+    return entity_info
+
+
 async def tweet_9am(pg_conn: asyncpg.Connection):
     """Morning praise tweet for high quality community."""
     chat = await get_random_top_quality_chat(pg_conn)
@@ -57,21 +80,8 @@ async def tweet_9am(pg_conn: asyncpg.Connection):
     if not chat:
         return "🌅 Good morning crypto world! Looking for amazing communities to highlight today! Any suggestions? 💭"
     
-    # Format entity info
-    entity_info = ""
-    if chat["entity"]:
-        entity = json.loads(chat["entity"])
-        logger.info(f"---json entity: {entity}")
-        if isinstance(entity, dict):
-            if "name" in entity:
-                entity_info += f"Project: {entity['name']}\n"
-            if "website" in entity and entity["website"]:
-                entity_info += f"Website: {entity['website']}\n"
-            if "social" in entity and isinstance(entity["social"], dict):
-                if "twitter" in entity["social"]:
-                    entity_info += f"Twitter: @{entity['social']['twitter'].split('/')[-1]}\n"
+    entity_info = format_entity_info(chat)
     
-    logger.info(f"---entity_info: {entity_info}")
     user_prompt = MORNING_PRAISE_PROMPT.format(
         name=chat["name"],
         about=chat["about"],
@@ -92,18 +102,7 @@ async def tweet_9pm(pg_conn: asyncpg.Connection):
     if not chat:
         return "🌙 Evening check! Still searching for communities to review... What groups caught your attention today? 🤔"
     
-    # Format entity info (same as morning praise)
-    entity_info = ""
-    if chat["entity"]:
-        entity = json.loads(chat["entity"])
-        if isinstance(entity, dict):
-            if "name" in entity:
-                entity_info += f"Project: {entity['name']}\n"
-            if "website" in entity and entity["website"]:
-                entity_info += f"Website: {entity['website']}\n"
-            if "social" in entity and isinstance(entity["social"], dict):
-                if "twitter" in entity["social"]:
-                    entity_info += f"Twitter: @{entity['social']['twitter'].split('/')[-1]}\n"
+    entity_info = format_entity_info(chat)
     
     user_prompt = EVENING_CRITIQUE_PROMPT.format(
         name=chat["name"],
