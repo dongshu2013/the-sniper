@@ -22,6 +22,7 @@ MAX_QUALITY_REPORTS_COUNT = 5
 QUALITY_SCORE_WEIGHT = 0.7
 CATEGORY_ALIGNMENT_WEIGHT = 0.3
 
+QUALITY_EVALUATION_INTERVAL_SECONDS = 3600 * 24
 
 # flake8: noqa: E501
 # format: off
@@ -84,7 +85,7 @@ Category Alignment Indicators:
 async def evaluate_chat_qualities(pg_conn, agent_client):
     """Evaluate chat quality for groups and update their quality scores."""
     current_time = int(time.time())
-    one_day_ago = current_time - 86400  # 24 hours in seconds
+    one_day_ago = current_time - QUALITY_EVALUATION_INTERVAL_SECONDS
     
     # 1. Get chat metadata for evaluation
     rows = await pg_conn.fetch(

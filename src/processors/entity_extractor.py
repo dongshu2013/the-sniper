@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 BATCH_SIZE = 10
-EVALUATION_WINDOW_SECONDS = 3600
+EVALUATION_WINDOW_SECONDS = 3600 * 24
 
 # flake8: noqa: E501
 # format: off
