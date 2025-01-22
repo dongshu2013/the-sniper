@@ -129,13 +129,11 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
             )
             
             if not message_rows:
-                quality_scores[row['id']] = 0.0
                 continue
 
             messages = [db_row_to_chat_message(msg_row) for msg_row in message_rows]
             
             if len(messages) < MIN_MESSAGES_THRESHOLD:
-                quality_scores[row['id']] = 0.0
                 continue
                 
             # 3. Prepare messages for AI evaluation
@@ -164,44 +162,25 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
             
             result = parse_ai_response(response, ["score", "category_alignment"])
             if result:
-                # Calculate final quality score
                 quality_score = (
                     float(result["score"]) * QUALITY_SCORE_WEIGHT +
                     float(result["category_alignment"]) * CATEGORY_ALIGNMENT_WEIGHT
                 )
-                quality_scores[row['id']] = round(quality_score, 2)
+                quality_score = round(quality_score, 2)
+                if quality_score > 0:
+                    quality_scores[row['id']] = quality_score
             else:
                 logger.error(f"Failed to parse AI response for chat {chat_id}")
-                quality_scores[row['id']] = 0.0
                 
         except Exception as e:
             logger.error(f"Failed to evaluate chat {chat_id}: {str(e)}", exc_info=True)
-            quality_scores[row['id']] = 0.0
             
     # 4. Bulk update quality scores
     if quality_scores:
-        update_queries = []
-        for chat_id, score in quality_scores.items():
-            update_queries.append(
-                f"({chat_id}, {score}, {current_time})"
-            )
-            
-        update_query = f"""
-            UPDATE chat_metadata AS cm
-            SET 
-                quality_score = v.score,
-                evaluated_at = v.evaluated_at
-            FROM (VALUES {','.join(update_queries)}) AS v(id, score, evaluated_at)
-            WHERE cm.id = v.id
-        """
-        
-        try:
-            await pg_conn.execute(update_query)
-            logger.info(f"Successfully updated quality scores for {len(quality_scores)} chats")
-        except Exception as e:
-            logger.error(f"Failed to update quality scores in database: {str(e)}", exc_info=True)
+        await update_chat_qualities(pg_conn, quality_scores)
+        logger.info(f"Successfully updated quality scores for {len(quality_scores)} chats")
     else:
-        logger.warning("No quality scores to update")
+        logger.info("No quality scores to update")
 
 
 async def update_chat_qualities(pg_conn, quality_scores: Dict[int, float]) -> None:
