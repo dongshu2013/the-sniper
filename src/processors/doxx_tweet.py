@@ -13,6 +13,7 @@ from redis.asyncio import Redis
 from src.common.agent_client import AgentClient
 from src.common.config import DATABASE_URL, REDIS_URL
 from src.common.types import Tweet
+from src.processors.processor import ProcessorBase
 from src.prompts.doxx_tweet_prompts import SYSTEM_PROMPT, USER_PROMPT
 
 logging.basicConfig(
@@ -41,7 +42,7 @@ redis = Redis.from_url(REDIS_URL)
 agent = AgentClient()
 
 
-class DoxxTweetProcessor:
+class DoxxTweetProcessor(ProcessorBase):
     def __init__(self):
         super().__init__(interval=3600 * 3)
         self.pg_conn = asyncpg.connect(DATABASE_URL)
