@@ -355,10 +355,10 @@ class EntityExtractor(ProcessorBase):
                     {"role": "system", "content": ABOUT_PROMPT},
                     {
                         "role": "user",
-                        "content": f"Please analyze this Telegram group context and write a description:\n\n{context}"
-                    }
+                        "content": f"Please analyze this Telegram group context and write a description:\n\n{context}",
+                    },
                 ],
-                temperature=0.7  # Slightly higher temperature for more creative writing
+                temperature=0.1,
             )
             return response.strip()
         except Exception as e:

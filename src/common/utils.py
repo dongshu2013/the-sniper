@@ -20,7 +20,7 @@ def parse_ai_response(response: str, fields: list[str] = None) -> dict:
             except json.JSONDecodeError:
                 pass
 
-        logger.info("Trying regex to extract JSON")
+        logger.info(f"Trying regex to extract JSON: {response}")
         # Last resort: try to extract using regex
 
         result = {}
