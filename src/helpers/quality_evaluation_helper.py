@@ -88,6 +88,8 @@ Category Alignment Indicators:
 BATCH_SIZE = 10
 MAX_CONCURRENT_TASKS = 5
 
+EVALUATION_INTERVAL_SECONDS = 3600 * 24  # 1 day
+
 
 async def evaluate_chat_qualities(pg_conn, agent_client):
     """Evaluate chat quality for groups and update their quality scores."""
@@ -95,11 +97,13 @@ async def evaluate_chat_qualities(pg_conn, agent_client):
     # 1. Get chat metadata for evaluation
     rows = await pg_conn.fetch(
         """
-        SELECT id, chat_id, category, name, type
+        SELECT id, chat_id, category, name, type, evaluated_at
         FROM chat_metadata
+        WHERE evaluated_at < $1
         ORDER BY evaluated_at DESC
         LIMIT 1000
-        """
+        """,
+        int(time.time()) - EVALUATION_INTERVAL_SECONDS,
     )
 
     if not rows:
