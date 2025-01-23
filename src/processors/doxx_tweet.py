@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import time
 from datetime import datetime
 
@@ -23,21 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 MIN_TWEET_INTERVAL = 7200
-
-
-TWITTER_CONSUMER_KEY = os.getenv("DOXX_TWITTER_CONSUMER_KEY")
-TWITTER_CONSUMER_SECRET = os.getenv("DOXX_TWITTER_CONSUMER_SECRET")
-TWITTER_ACCESS_TOKEN = os.getenv("DOXX_TWITTER_ACCESS_TOKEN")
-TWITTER_ACCESS_TOKEN_SECRET = os.getenv("DOXX_TWITTER_ACCESS_TOKEN_SECRET")
-
-client = tweepy.Client(
-    consumer_key=TWITTER_CONSUMER_KEY,
-    consumer_secret=TWITTER_CONSUMER_SECRET,
-    access_token=TWITTER_ACCESS_TOKEN,
-    access_token_secret=TWITTER_ACCESS_TOKEN_SECRET,
-)
 
 redis = Redis.from_url(REDIS_URL)
 agent = AgentClient()
@@ -47,11 +32,15 @@ class DoxxTweetProcessor(ProcessorBase):
     def __init__(self):
         super().__init__(interval=3600)
         self.pg_conn = None
-        self.character = "doxx"
+        self.x_client = None
+        self.character = "doxx_agent"
 
     async def process(self, dry_run: bool = False):
         if not self.pg_conn:
             self.pg_conn = await asyncpg.connect(DATABASE_URL)
+
+        if not self.x_client:
+            self.x_client = await self.build_client()
 
         chat = await get_random_top_quality_chat(self.pg_conn)
         if not chat:
@@ -105,7 +94,7 @@ Current Time:
             return
 
         if not dry_run:
-            tweet([tweet_text])
+            self.tweet([tweet_text])
             # Store tweet in database
             await self.pg_conn.execute(
                 """
@@ -136,6 +125,42 @@ Current Time:
             )
             for row in rows
         ]
+
+    async def build_client(self):
+        row = await self.pg_conn.fetchrow(
+            """
+            SELECT key FROM api_key
+            WHERE platform = 'twitter'
+            AND account_id = $1
+            AND status = 'active'
+            LIMIT 1
+            """,
+            self.character,
+        )
+        if not row:
+            return None
+        key = json.loads(row["key"])
+        return tweepy.Client(
+            consumer_key=key["consumer_key"],
+            consumer_secret=key["consumer_secret"],
+            access_token=key["access_token"],
+            access_token_secret=key["access_token_secret"],
+        )
+
+    def tweet(self, tweets: list[str]):
+        """Post tweet or thread of tweets if text exceeds character limit."""
+        # Post as single tweet if no splitting needed
+        if len(tweets) == 1:
+            return self.x_client.create_tweet(text=tweets[0])
+
+        # First tweet becomes the parent
+        response = self.client.create_tweet(text=tweets[0])
+        parent_tweet_id = response.data["id"]
+        # All subsequent tweets reply to the parent
+        for tweet_text in tweets[1:]:
+            self.x_client.create_tweet(
+                text=tweet_text, in_reply_to_tweet_id=parent_tweet_id
+            )
 
 
 def format_time(ts: int) -> str:
@@ -193,20 +218,6 @@ async def get_random_top_quality_chat(pg_conn: asyncpg.Connection) -> dict:
     if not row:
         return None
     return dict(row)
-
-
-def tweet(tweets: list[str]):
-    """Post tweet or thread of tweets if text exceeds character limit."""
-    # Post as single tweet if no splitting needed
-    if len(tweets) == 1:
-        return client.create_tweet(text=tweets[0])
-
-    # First tweet becomes the parent
-    response = client.create_tweet(text=tweets[0])
-    parent_tweet_id = response.data["id"]
-    # All subsequent tweets reply to the parent
-    for tweet_text in tweets[1:]:
-        client.create_tweet(text=tweet_text, in_reply_to_tweet_id=parent_tweet_id)
 
 
 async def should_tweeet(latest_tweets: list[Tweet]):
