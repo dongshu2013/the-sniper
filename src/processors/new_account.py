@@ -93,32 +93,61 @@ class NewAccountProcessor(ProcessorBase):
             old_task = self.tasks.get(request.phone)
             if old_task:
                 old_task.cancel()
-            self.tasks[request.phone] = asyncio.create_task(
-                self.process_request(request)
+                logger.info(f"Cancelled old task for {request.phone}")
+                await self.redis_client.set(
+                    phone_status_key(request.phone), "cancelled", ex=1200
+                )
+                return
+
+            # Wrap process_request with timeout of 15 minutes
+            task = asyncio.create_task(
+                asyncio.wait_for(
+                    self.process_request(request), timeout=900
+                )  # 15 minutes in seconds
             )
+            task.add_done_callback(
+                lambda t, phone=request.phone: self._handle_task_exception(t, phone)
+            )
+            self.tasks[request.phone] = task
+
+    def _handle_task_exception(self, task, phone):
+        try:
+            task.result()
+        except Exception as e:
+            logger.error(f"Task for phone {phone} failed with error: {e}")
+        finally:
+            # Clean up the task from self.tasks
+            if phone in self.tasks and self.tasks[phone] == task:
+                del self.tasks[phone]
 
     async def process_request(self, request: NewAccountRequest):
-        proxy = await pick_ip_proxy(self.pg_conn, IpType.DATACENTER)
-        session = request.phone.replace("+", "")
-        # The socks5h protocol tells the client to perform DNS resolution
-        # through the proxy server, which is often necessary for residential proxies.
+        try:
+            proxy = await pick_ip_proxy(self.pg_conn, IpType.DATACENTER)
+            session = request.phone.replace("+", "")
+            # The socks5h protocol tells the client to perform DNS resolution
+            # through the proxy server, which is often
+            # necessary for residential proxies.
+            client = TelegramClient(
+                session,
+                request.api_id,
+                request.api_hash,
+                proxy={
+                    "proxy_type": "socks5h",
+                    "addr": proxy.ip,
+                    "port": proxy.port,
+                    "username": proxy.username,
+                    "password": proxy.password,
+                },
+                connection_retries=5,
+                timeout=30,
+            )
+        except Exception as e:
+            logger.error(f"Error creating Telegram client for {request.phone}: {e}")
+            await self.redis_client.set(
+                phone_status_key(request.phone), "error", ex=1200
+            )
+            return
 
-        client = TelegramClient(
-            session,
-            request.api_id,
-            request.api_hash,
-            proxy={
-                "proxy_type": "socks5h",
-                "addr": proxy.ip,
-                "port": proxy.port,
-                "username": proxy.username,
-                "password": proxy.password,
-            },
-            connection_retries=5,
-            timeout=30,
-        )
-        status = "processing"
-        await self.redis_client.set(phone_status_key(request.phone), status, ex=1200)
         try:
             await client.connect()
             phone_code = await client.send_code_request(request.phone)
@@ -162,12 +191,10 @@ class NewAccountProcessor(ProcessorBase):
             status = "success"
         except asyncio.CancelledError:
             logger.info(f"Account creation cancelled for {request.phone}")
-            if status != "success":
-                status = "error"
+            status = "error"
         except Exception as e:
             logger.error(f"Error processing request for {request.phone}: {e}")
-            if status != "success":
-                status = "error"
+            status = "error"
         finally:
             await self.redis_client.set(
                 phone_status_key(request.phone), status, ex=1200
