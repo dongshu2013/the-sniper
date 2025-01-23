@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Optional
 
 import asyncpg
 import phonenumbers
@@ -8,7 +9,13 @@ from pydantic import BaseModel
 from telethon import TelegramClient
 
 from src.common.account import upload_session_file
-from src.common.config import DATABASE_URL, REDIS_URL, SERVICE_PREFIX
+from src.common.config import (
+    DATABASE_URL,
+    DEFAULT_API_HASH,
+    DEFAULT_API_ID,
+    REDIS_URL,
+    SERVICE_PREFIX,
+)
 from src.common.types import IpType
 from src.helpers.ip_proxy_helper import pick_ip_proxy
 from src.processors.processor import ProcessorBase
@@ -28,8 +35,8 @@ def phone_code_key(phone: str) -> str:
 
 
 class NewAccountRequest(BaseModel):
-    api_id: str
-    api_hash: str
+    api_id: Optional[str] = None
+    api_hash: Optional[str] = None
     phone: str
 
 
@@ -69,6 +76,14 @@ class NewAccountProcessor(ProcessorBase):
             if not normalized_phone:
                 logger.error(f"Invalid phone number format: {request.phone}")
                 continue
+
+            if request.api_id is None or request.api_hash is None:
+                logger.error(
+                    f"API ID or API hash is provided for "
+                    f"{request.phone}, will use default"
+                )
+                request.api_id = DEFAULT_API_ID
+                request.api_hash = DEFAULT_API_HASH
 
             request.phone = normalized_phone
             old_task = self.tasks.get(request.phone)

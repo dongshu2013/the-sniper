@@ -21,6 +21,10 @@ R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID")
 R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY")
 
 
+DEFAULT_API_ID = os.environ.get("DEFAULT_API_ID")
+DEFAULT_API_HASH = os.environ.get("DEFAULT_API_HASH")
+
+
 def chat_per_hour_stats_key(chat_id: str, metric: str):
     hour = int(time.time() / 3600)
     return f"{SERVICE_PREFIX}:chat:{chat_id}:per_hour_stats:{hour}:{metric}"
