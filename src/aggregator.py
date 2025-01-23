@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 
+from src.processors.doxx_tweet import DoxxTweetProcessor
 from src.processors.entity_extractor import EntityExtractor
 from src.processors.message_queue import MessageQueueProcessor
 from src.processors.quality_evaluation import QualityEvaluationProcessor
@@ -19,6 +20,7 @@ tasks = {
     "msg_queue_processor": MessageQueueProcessor(),
     "entity_extractor": EntityExtractor(),
     "quality_evaluation_processor": QualityEvaluationProcessor(),
+    "doxx_tweet": DoxxTweetProcessor(),
 }
 
 

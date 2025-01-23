@@ -38,8 +38,10 @@ Requirements:
 1. Based on the time of day(0-23 hours), if it's morning or evening, you can say something like "Morning" or "Evening" to start the tweet
 2. Based on the score and summary, praise the community if the score is above 7, or criticize harshly if the score is below 5
 3. Do not explain or intro the community in the tweet, assume everyone knows who it is, you can refer the name and twitter of the community in the tweet
-4. Be creative and opinionated about the tweet, but keep it under 200 characters
-5. Make it feel personal and authentic
+4. If the community has a twitter, you can mention it in the tweet. If not, you can mention the community's website or other social media platforms. Do not make up a twitter account for the community.
+5. If the current topic is overlapped with the previous tweets, be creative to make it different. You can mention the previous tweets in the tweet
+6. Be creative and opinionated about the tweet, but keep it under 200 characters
+7. Make it feel personal and authentic
 """
 
 # format: on

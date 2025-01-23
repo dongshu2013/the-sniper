@@ -45,7 +45,7 @@ agent = AgentClient()
 
 class DoxxTweetProcessor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=3600 * 3)
+        super().__init__(interval=3600)
         self.pg_conn = None
         self.character = "doxx"
 
@@ -62,9 +62,15 @@ class DoxxTweetProcessor(ProcessorBase):
         if not await should_tweeet(latest_tweets):
             return
 
+        previous_tweets = "\n".join(
+            [
+                f"{tweet.text} (Posted at {format_time(tweet.posted_at)})"
+                for tweet in latest_tweets
+            ]
+        )
         la_tz = pytz.timezone("America/Los_Angeles")
         current_time = datetime.now(la_tz).strftime("%Y-%m-%d %H:%M:%S")
-        about = chat.get("about", None) or chat.get("about", "No Datq")
+        about = chat.get("about", None) or chat.get("about", "No Data")
         entity = format_entity_info(chat)
         context = f"""
 Community Basic Info:
@@ -77,6 +83,9 @@ Entity Extracted from group:
 
 Quality Score:
 {chat["quality_score"]}
+
+Previous Tweets:
+{previous_tweets}
 
 Current Time:
 {current_time}
@@ -127,6 +136,10 @@ Current Time:
             )
             for row in rows
         ]
+
+
+def format_time(ts: int) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def format_entity_info(chat: dict) -> str:
