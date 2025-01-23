@@ -34,6 +34,10 @@ def phone_code_key(phone: str) -> str:
     return f"{SERVICE_PREFIX}:phone_code:{phone}"
 
 
+def phone_status_key(phone: str) -> str:
+    return f"{SERVICE_PREFIX}:phone_status:{phone}"
+
+
 class NewAccountRequest(BaseModel):
     api_id: Optional[str] = None
     api_hash: Optional[str] = None
@@ -113,6 +117,8 @@ class NewAccountProcessor(ProcessorBase):
             connection_retries=5,
             timeout=30,
         )
+        status = "processing"
+        await self.redis_client.set(phone_status_key(request.phone), status, ex=1200)
         try:
             await client.connect()
             phone_code = await client.send_code_request(request.phone)
@@ -153,12 +159,19 @@ class NewAccountProcessor(ProcessorBase):
                 fullname,
             )
             logger.info(f"Successfully created account for {username} (ID: {tg_id})")
+            status = "success"
         except asyncio.CancelledError:
             logger.info(f"Account creation cancelled for {request.phone}")
-            raise  # Re-raise the cancellation
+            if status != "success":
+                status = "error"
         except Exception as e:
             logger.error(f"Error processing request for {request.phone}: {e}")
+            if status != "success":
+                status = "error"
         finally:
+            await self.redis_client.set(
+                phone_status_key(request.phone), status, ex=1200
+            )
             await client.disconnect()
 
     async def add_new_account(
