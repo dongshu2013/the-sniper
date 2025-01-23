@@ -88,6 +88,11 @@ class ChatMessageButton(BaseModel):
         }
 
 
+class MessageReaction(BaseModel):
+    emoji: str
+    count: int
+
+
 class ChatMessage(BaseModel):
     message_id: str
     chat_id: str
@@ -96,6 +101,7 @@ class ChatMessage(BaseModel):
     reply_to: Optional[str] = None
     topic_id: Optional[str] = None
     buttons: list[ChatMessageButton] = []
+    reactions: Optional[MessageReaction] = []
     message_timestamp: int
 
     class Config:

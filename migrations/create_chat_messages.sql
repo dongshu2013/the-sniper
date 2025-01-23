@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     message_text TEXT NOT NULL,
     buttons JSONB DEFAULT '[]',
     sender_id TEXT,
+    reactions JSONB DEFAULT '[]',
     message_timestamp BIGINT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)

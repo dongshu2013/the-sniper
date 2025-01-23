@@ -5,6 +5,7 @@ import os
 import asyncpg
 from redis.asyncio import Redis
 from telethon import TelegramClient, events
+from telethon.tl.types import Message
 
 from src.common.account import download_session_file, load_accounts, upload_session_file
 from src.common.config import (
@@ -151,7 +152,7 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
 
     @client.on(events.NewMessage)
     async def handle_new_message(event: events.NewMessage):
-        raw_message = event.message
+        raw_message: Message = event.message
         if not raw_message.is_group or not raw_message.is_channel:
             return
 
@@ -167,6 +168,14 @@ async def register_handlers(pg_conn: asyncpg.Connection, client: TelegramClient)
         pipeline.set(message_seen_key(msg.chat_id, msg.message_id), "true")
         pipeline.lpush(MESSAGE_QUEUE_KEY, msg.model_dump_json())
         await pipeline.execute()
+
+    @client.on(events.MessageEdited)
+    async def handle_message_reactions(event):
+        message: Message = event.message
+        msg = to_chat_message(message)
+        if not msg:
+            return
+        await redis_client.lpush(MESSAGE_QUEUE_KEY, msg.model_dump_json())
 
 
 def main():

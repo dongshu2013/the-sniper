@@ -5,7 +5,7 @@ from typing import Optional
 import asyncpg
 from telethon.tl.types import Message
 
-from src.common.types import ChatMessage, ChatMessageButton
+from src.common.types import ChatMessage, ChatMessageButton, MessageReaction
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,16 @@ def to_chat_message(message: Message) -> ChatMessage | None:
                     )
                 )
 
+    reactions = []
+    if message.reactions:
+        for reaction_count in message.reactions.results:
+            if hasattr(reaction_count.reaction, "emoticon"):
+                emoji = reaction_count.reaction.emoticon
+            else:
+                emoji = str(reaction_count.reaction)
+            count = reaction_count.count
+            reactions.append(MessageReaction(emoji=emoji, count=count))
+
     from_id = getattr(message, "from_id", {})
     sender_id = getattr(from_id, "user_id", None)
     return ChatMessage(
@@ -81,6 +91,7 @@ def to_chat_message(message: Message) -> ChatMessage | None:
         reply_to=str(reply_to) if reply_to else None,
         topic_id=str(topic_id) if topic_id else None,
         buttons=buttons,
+        reactions=reactions,
     )
 
 
@@ -111,9 +122,10 @@ async def store_messages(
                 topic_id,
                 sender_id,
                 message_timestamp,
-                buttons
+                buttons,
+                reactions
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             ON CONFLICT (chat_id, message_id) DO NOTHING
             """,
             [
@@ -126,6 +138,7 @@ async def store_messages(
                     m.sender_id,
                     m.message_timestamp,
                     json.dumps([b.model_dump() for b in m.buttons]),
+                    json.dumps([r.model_dump() for r in m.reactions]),
                 )
                 for m in messages
             ],
