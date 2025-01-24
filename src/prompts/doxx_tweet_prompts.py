@@ -42,6 +42,7 @@ Requirements:
 5. If the current topic is overlapped with the previous tweets, be creative to make it different. You can mention the previous tweets in the tweet
 6. Be creative and opinionated about the tweet, but keep it under 200 characters
 7. Make it feel personal and authentic
+8. Be creative about the style to tweet, you don't need to mention the concrete score in every tweet, and do not follow the same style with previous tweets
 """
 
 # format: on

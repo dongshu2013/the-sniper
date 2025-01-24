@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MIN_TWEET_INTERVAL = 3600 * 6
+MIN_TWEET_INTERVAL = 3600 * 4
 
 redis = Redis.from_url(REDIS_URL)
 agent = AgentClient()
@@ -30,7 +30,7 @@ agent = AgentClient()
 
 class DoxxTweetProcessor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=3600)
+        super().__init__(interval=3600 * 4)
         self.pg_conn = None
         self.x_client = None
         self.character = "doxx_agent"
@@ -49,6 +49,7 @@ class DoxxTweetProcessor(ProcessorBase):
         logger.info(f"Getting chat: {chat}")
         latest_tweets = await self.get_last_10_tweets()
         if not await should_tweeet(latest_tweets):
+            logger.info("Not tweeting, too soon")
             return
 
         previous_tweets = "\n".join(
@@ -100,8 +101,8 @@ Current Time:
                 """
                 INSERT INTO character_tweets (character, posted_at, tweet_text)
                 VALUES ($1, $2, $3)
-            """,
-                "doxx",
+                """,
+                self.character,
                 int(time.time()),
                 tweet_text,
             )
@@ -154,7 +155,7 @@ Current Time:
             return self.x_client.create_tweet(text=tweets[0])
 
         # First tweet becomes the parent
-        response = self.client.create_tweet(text=tweets[0])
+        response = self.x_client.create_tweet(text=tweets[0])
         parent_tweet_id = response.data["id"]
         # All subsequent tweets reply to the parent
         for tweet_text in tweets[1:]:
