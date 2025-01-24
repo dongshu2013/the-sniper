@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Optional
 
 import asyncpg
@@ -133,7 +134,7 @@ class NewAccountProcessor(ProcessorBase):
 
             proxies = await pick_ip_proxy(self.pg_conn, IpType.DATACENTER)
             proxy = proxies[0]
-            session = request.phone.replace("+", "")
+            session = f"{request.phone.replace('+', '')}_{int(time.time())}"
             client = TelegramClient(
                 session,
                 request.api_id,

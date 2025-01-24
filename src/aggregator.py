@@ -5,6 +5,7 @@ import logging
 from src.processors.doxx_tweet import DoxxTweetProcessor
 from src.processors.entity_extractor import EntityExtractor
 from src.processors.message_queue import MessageQueueProcessor
+from src.processors.new_account import NewAccountProcessor
 from src.processors.quality_evaluation import QualityEvaluationProcessor
 from src.processors.tg_link_importer import TgLinkImporter
 
@@ -21,6 +22,7 @@ tasks = {
     "entity_extractor": EntityExtractor(),
     "quality_evaluation_processor": QualityEvaluationProcessor(),
     "doxx_tweet": DoxxTweetProcessor(),
+    "new_account": NewAccountProcessor(),
 }
 
 
