@@ -28,3 +28,11 @@ def upload_file(file_path: str, key: str):
 
 def download_file(key: str, file_path: str):
     s3.download_file(R2_BUCKET_NAME, key, file_path)
+
+
+def file_exists(key: str) -> bool:
+    try:
+        s3.head_object(Bucket=R2_BUCKET_NAME, Key=key)
+        return True
+    except Exception:
+        return False

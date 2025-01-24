@@ -3,7 +3,7 @@ import os
 
 import asyncpg
 
-from src.common.r2_client import download_file, upload_file
+from src.common.r2_client import download_file, file_exists, upload_file
 from src.common.types import Account, AccountStatus
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,11 @@ async def upload_session_file(account_id: int, session_file: str | None = None):
     except Exception as e:
         logger.error(f"Failed to upload session file {session_file}: {e}")
         raise
+
+
+def session_file_exists(account_id: int) -> bool:
+    session_key = gen_session_file_key(account_id)
+    return file_exists(session_key)
 
 
 async def heartbeat(pg_conn: asyncpg.Connection, account: Account):

@@ -1,12 +1,17 @@
 import argparse
 import asyncio
+import json
 import logging
 
-import asyncpg
-from telethon import TelegramClient
+import phonenumbers
+from redis.asyncio import Redis
 
-from src.common.account import upload_session_file
-from src.common.config import DATABASE_URL
+from src.common.config import REDIS_URL
+from src.processors.new_account import (
+    NEW_ACCOUNT_REQUEST_KEY,
+    phone_code_key,
+    phone_status_key,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -15,55 +20,45 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+redis_client = Redis.from_url(REDIS_URL)
 
-async def create_new_account(api_id: str, api_hash: str, phone: str):
-    # Initialize temporary session
-    client = TelegramClient(f"NEW_SESSION_{phone}", api_id, api_hash)
 
+async def create_new_account(phone: str):
     try:
-        # Start the client and connect
-        if phone.startswith("+"):
-            await client.start(phone=phone)
+        libphonenumber = phonenumbers.parse(phone)
+        phone_number = phonenumbers.format_number(
+            libphonenumber, phonenumbers.PhoneNumberFormat.E164
+        )
+        await redis_client.lpush(
+            NEW_ACCOUNT_REQUEST_KEY, json.dumps({"phone": phone_number})
+        )
+        code = input("Please input the code to continue: ")
+        await redis_client.set(phone_code_key(phone_number), code)
+        while True:
+            status = await redis_client.get(phone_status_key(phone_number))
+            if status is not None:
+                break
+            await asyncio.sleep(1)
+
+        if status == "success":
+            logger.info(f"Successfully created account for {phone_number}")
         else:
-            await client.start(phone=f"+{phone}")
-
-        # Get account info
-        me = await client.get_me()
-        tg_id = str(me.id)
-        username = me.username
-        fullname = me.first_name + f" {me.last_name}" if me.last_name else me.first_name
-
-        # Connect to database
-        conn = await asyncpg.connect(DATABASE_URL)
-
-        # Upload session file
-        await upload_session_file(tg_id, f"NEW_SESSION_{phone}.session")
-
-        logger.info(f"Successfully created account for {username} (ID: {tg_id})")
+            logger.error(
+                f"Failed to create account for {phone_number} with status {status}"
+            )
 
     except Exception as e:
         logger.error(f"Failed to create account: {e}")
         raise
-    finally:
-        # Cleanup
-        await client.disconnect()
-        if "conn" in locals():
-            await conn.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Create a new Telegram account entry")
-    parser.add_argument("--api-id", required=True, help="Telegram API ID")
-    parser.add_argument("--api-hash", required=True, help="Telegram API Hash")
     parser.add_argument(
         "--phone", required=True, help="Phone number in international format"
     )
-
     args = parser.parse_args()
-
-    asyncio.run(
-        create_new_account(api_id=args.api_id, api_hash=args.api_hash, phone=args.phone)
-    )
+    asyncio.run(create_new_account(args.phone))
 
 
 if __name__ == "__main__":

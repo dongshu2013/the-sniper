@@ -75,14 +75,19 @@ class NewAccountProcessor(ProcessorBase):
             if not request:
                 break
 
-            request = NewAccountRequest.model_validate_json(request)
+            logger.info(f"Processing request {request}")
+            try:
+                request = NewAccountRequest.model_validate_json(request)
+            except Exception as e:
+                logger.error(f"Failed to parse request: {request}, error: {e}")
+                continue
+
             normalized_phone = normalize_phone(request.phone)
             if not normalized_phone:
-                logger.error(f"Invalid phone number format: {request.phone}")
                 continue
 
             if request.api_id is None or request.api_hash is None:
-                logger.error(
+                logger.info(
                     f"API ID or API hash is provided for "
                     f"{request.phone}, will use default"
                 )
@@ -122,17 +127,19 @@ class NewAccountProcessor(ProcessorBase):
 
     async def process_request(self, request: NewAccountRequest):
         try:
-            proxy = await pick_ip_proxy(self.pg_conn, IpType.DATACENTER)
+            if await self.account_exists(request.phone):
+                logger.info(f"Account already exists for {request.phone}")
+                raise Exception("Account already exists")
+
+            proxies = await pick_ip_proxy(self.pg_conn, IpType.DATACENTER)
+            proxy = proxies[0]
             session = request.phone.replace("+", "")
-            # The socks5h protocol tells the client to perform DNS resolution
-            # through the proxy server, which is often
-            # necessary for residential proxies.
             client = TelegramClient(
                 session,
                 request.api_id,
                 request.api_hash,
                 proxy={
-                    "proxy_type": "socks5h",
+                    "proxy_type": "socks5",
                     "addr": proxy.ip,
                     "port": proxy.port,
                     "username": proxy.username,
@@ -150,14 +157,17 @@ class NewAccountProcessor(ProcessorBase):
 
         try:
             await client.connect()
+            logger.info(f"Sending code request to {request.phone}")
             phone_code = await client.send_code_request(request.phone)
             phone_code_hash = phone_code.phone_code_hash
 
+            logger.info(f"Waiting for code for {request.phone}")
             code = None
             for _ in range(300):  # wait for 5 minutes
                 code = await self.redis_client.get(phone_code_key(request.phone))
                 if code:
-                    logger.info(f"Got phone code for {request.phone}")
+                    code = int(code.decode("utf-8"))
+                    logger.info(f"Got phone code for {request.phone} as {code}")
                     break
                 await asyncio.sleep(1)  # Cancellation can happen here
 
@@ -223,3 +233,17 @@ class NewAccountProcessor(ProcessorBase):
             phone,
             fullname,
         )
+
+    async def account_exists(self, phone: str) -> bool:
+        count = await self.pg_conn.fetchval(
+            "SELECT COUNT(*) FROM accounts WHERE phone = $1", phone
+        )
+        return count > 0
+
+
+def main():
+    asyncio.run(NewAccountProcessor().start_processing())
+
+
+if __name__ == "__main__":
+    main()
