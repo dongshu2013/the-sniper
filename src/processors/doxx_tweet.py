@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MIN_TWEET_INTERVAL = 7200
+MIN_TWEET_INTERVAL = 3600 * 6
 
 redis = Redis.from_url(REDIS_URL)
 agent = AgentClient()
