@@ -115,6 +115,6 @@ async def heartbeat(pg_conn: asyncpg.Connection, account: Account):
         """
         UPDATE accounts SET last_active_at = NOW(), status = $1 WHERE id = $2
         """,
-        AccountStatus.RUNNING,
+        AccountStatus.RUNNING.value,
         account.id,
     )
