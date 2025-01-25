@@ -158,6 +158,7 @@ class NewAccountProcessor(ProcessorBase):
             )
             return
 
+        status = "error"
         try:
             await client.connect()
             logger.info(f"Sending code request to {request.phone}")
@@ -204,14 +205,14 @@ class NewAccountProcessor(ProcessorBase):
             status = json.dumps(
                 {"status": "success", "account_id": account_id, "tg_id": tg_id}
             )
-        except asyncio.CancelledError:
-            logger.info(f"Account creation cancelled for {request.phone}")
-            status = "error"
         except Exception as e:
             logger.error(f"Error processing request for {request.phone}: {e}")
             status = "error"
+            raise e
         finally:
-            await self.redis_client.set(phone_status_key(request.phone), status, ex=900)
+            await self.redis_client.set(
+                phone_status_key(request.phone), status, ex=DEFAULT_TIMEOUT
+            )
             await client.disconnect()
 
     async def add_new_account(
