@@ -106,11 +106,7 @@ class NewAccountProcessor(ProcessorBase):
             old_task = self.tasks.get(request.phone)
             if old_task:
                 old_task.cancel()
-                logger.info(f"Cancelled old task for {request.phone}")
-                await self.redis_client.set(
-                    phone_status_key(request.phone), "cancelled", ex=DEFAULT_TIMEOUT
-                )
-                return
+                logger.info(f"Cancelling old task for {request.phone}")
 
             # Wrap process_request with timeout of 15 minutes
             task = asyncio.create_task(
@@ -134,7 +130,7 @@ class NewAccountProcessor(ProcessorBase):
                 del self.tasks[phone]
 
     async def process_request(self, request: NewAccountRequest):
-        status = json.dumps({"status": "error"})
+        status = json.dumps({"status": "error", "timestamp": int(time.time())})
         try:
             if await self.account_exists(request.phone):
                 logger.info(f"Account already exists for {request.phone}")
@@ -226,7 +222,12 @@ class NewAccountProcessor(ProcessorBase):
             )
             logger.info(f"Successfully created account for {username} (ID: {tg_id})")
             status = json.dumps(
-                {"status": "success", "account_id": account_id, "tg_id": tg_id}
+                {
+                    "status": "success",
+                    "account_id": account_id,
+                    "tg_id": tg_id,
+                    "timestamp": int(time.time()),
+                }
             )
         finally:
             await self.redis_client.set(phone_status_key(request.phone), status)
