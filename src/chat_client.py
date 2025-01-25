@@ -47,18 +47,19 @@ async def run():
         async def check_new_accounts(task_group):
             while True:
                 new_accounts = await load_accounts(pg_conn)
-                new_accounts = await init_accounts(pg_conn, new_accounts)
-                for account in new_accounts:
-                    tg_link_proc = TgLinkPreProcessor(account.client)
-                    group_proc = GroupProcessor(account.client)
-                    task_group.create_task(account.client.run_until_disconnected())
-                    task_group.create_task(tg_link_proc.start_processing())
-                    task_group.create_task(group_proc.start_processing())
-                await heartbeat_processor.add_accounts(new_accounts)
-                await update_account_status(
-                    pg_conn, AccountStatus.RUNNING, [acc.id for acc in new_accounts]
-                )
-                accounts.extend(new_accounts)
+                if new_accounts:
+                    new_accounts = await init_accounts(pg_conn, new_accounts)
+                    for account in new_accounts:
+                        tg_link_proc = TgLinkPreProcessor(account.client)
+                        group_proc = GroupProcessor(account.client)
+                        task_group.create_task(account.client.run_until_disconnected())
+                        task_group.create_task(tg_link_proc.start_processing())
+                        task_group.create_task(group_proc.start_processing())
+                    await heartbeat_processor.add_accounts(new_accounts)
+                    await update_account_status(
+                        pg_conn, AccountStatus.RUNNING, [acc.id for acc in new_accounts]
+                    )
+                    accounts.extend(new_accounts)
                 await asyncio.sleep(60)  # Check every minute
 
         async with asyncio.TaskGroup() as tg:
@@ -79,9 +80,13 @@ async def run():
 
 
 async def init_accounts(pg_conn: asyncpg.Connection, accounts: list[Account]):
-    proxies = await pick_ip_proxy(pg_conn, IpType.DATACENTER, limit=len(accounts))
-    ip_usage = {proxy.ip: 0 for proxy in proxies}
-    ip_usage["localhost"] = 0
+    try:
+        proxies = await pick_ip_proxy(pg_conn, IpType.DATACENTER, limit=len(accounts))
+        ip_usage = {proxy.ip: 0 for proxy in proxies}
+        ip_usage["localhost"] = 0
+    except Exception as e:
+        logger.error(f"Failed to pick IP proxy: {e}")
+        return []
 
     for account in accounts:
         logger.info(f"Downloading session file for account {account.tg_id}")
