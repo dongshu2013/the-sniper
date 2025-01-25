@@ -71,7 +71,8 @@ async def run():
         for task in asyncio.all_tasks():
             if task is not asyncio.current_task():
                 task.cancel()
-        await hb_task.cancel()
+        if hb_task:  # Check if task exists
+            hb_task.cancel()  # Remove await
         for account in accounts:
             await account.client.disconnect()
         await reset_account_status(pg_conn)
