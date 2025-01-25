@@ -134,6 +134,7 @@ class NewAccountProcessor(ProcessorBase):
                 del self.tasks[phone]
 
     async def process_request(self, request: NewAccountRequest):
+        status = json.dumps({"status": "error"})
         try:
             if await self.account_exists(request.phone):
                 logger.info(f"Account already exists for {request.phone}")
@@ -158,12 +159,9 @@ class NewAccountProcessor(ProcessorBase):
             )
         except Exception as e:
             logger.error(f"Error creating Telegram client for {request.phone}: {e}")
-            await self.redis_client.set(
-                phone_status_key(request.phone), "error", ex=DEFAULT_TIMEOUT
-            )
+            await self.redis_client.set(phone_status_key(request.phone), status)
             return
 
-        status = "error"
         try:
             await client.connect()
             logger.info(f"Sending code request to {request.phone}")
@@ -230,14 +228,8 @@ class NewAccountProcessor(ProcessorBase):
             status = json.dumps(
                 {"status": "success", "account_id": account_id, "tg_id": tg_id}
             )
-        except Exception as e:
-            logger.error(f"Error processing request for {request.phone}: {e}")
-            status = "error"
-            raise e
         finally:
-            await self.redis_client.set(
-                phone_status_key(request.phone), status, ex=DEFAULT_TIMEOUT
-            )
+            await self.redis_client.set(phone_status_key(request.phone), status)
             await client.disconnect()
 
     async def add_new_account(
