@@ -39,6 +39,30 @@ async def load_accounts(
     ]
 
 
+async def update_account_status(
+    pg_conn: asyncpg.Connection,
+    status: AccountStatus,
+    account_ids: list[int] | None = None,
+):
+    await pg_conn.execute(
+        """
+        UPDATE accounts SET status = $1 WHERE id = ANY($2)
+        """,
+        status,
+        account_ids,
+    )
+
+
+async def reset_account_status(pg_conn: asyncpg.Connection):
+    await pg_conn.execute(
+        """
+        UPDATE accounts SET status = $1 WHERE status = $2
+        """,
+        AccountStatus.ACTIVE,
+        AccountStatus.RUNNING,
+    )
+
+
 def gen_session_file_key(account_id: int):
     return f"tg-user-sessions/{account_id}.session"
 
@@ -89,7 +113,8 @@ def session_file_exists(account_id: int) -> bool:
 async def heartbeat(pg_conn: asyncpg.Connection, account: Account):
     await pg_conn.execute(
         """
-        UPDATE accounts SET last_active_at = NOW() WHERE id = $1
+        UPDATE accounts SET last_active_at = NOW(), status = $1 WHERE id = $2
         """,
+        AccountStatus.RUNNING,
         account.id,
     )

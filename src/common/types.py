@@ -9,6 +9,7 @@ class AccountStatus(Enum):
     ACTIVE = "active"
     BANNED = "banned"
     SUSPENDED = "suspended"
+    RUNNING = "running"
 
 
 class EntityType(Enum):

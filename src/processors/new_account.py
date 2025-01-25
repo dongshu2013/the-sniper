@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from typing import Optional
@@ -101,7 +102,7 @@ class NewAccountProcessor(ProcessorBase):
                 old_task.cancel()
                 logger.info(f"Cancelled old task for {request.phone}")
                 await self.redis_client.set(
-                    phone_status_key(request.phone), "cancelled", ex=1200
+                    phone_status_key(request.phone), "cancelled", ex=600
                 )
                 return
 
@@ -152,7 +153,7 @@ class NewAccountProcessor(ProcessorBase):
         except Exception as e:
             logger.error(f"Error creating Telegram client for {request.phone}: {e}")
             await self.redis_client.set(
-                phone_status_key(request.phone), "error", ex=1200
+                phone_status_key(request.phone), "error", ex=600
             )
             return
 
@@ -190,7 +191,7 @@ class NewAccountProcessor(ProcessorBase):
                 me.first_name + f" {me.last_name}" if me.last_name else me.first_name
             )
             logger.info(f"Adding new account for {username} (ID: {tg_id})")
-            await self.add_new_account(
+            account_id = await self.add_new_account(
                 tg_id,
                 username,
                 request.api_id,
@@ -199,7 +200,9 @@ class NewAccountProcessor(ProcessorBase):
                 fullname,
             )
             logger.info(f"Successfully created account for {username} (ID: {tg_id})")
-            status = "success"
+            status = json.dumps(
+                {"status": "success", "account_id": account_id, "tg_id": tg_id}
+            )
         except asyncio.CancelledError:
             logger.info(f"Account creation cancelled for {request.phone}")
             status = "error"
@@ -220,12 +223,13 @@ class NewAccountProcessor(ProcessorBase):
         api_hash: str,
         phone: str,
         fullname: str,
-    ):
-        # Insert account data
-        await self.pg_conn.execute(
+    ) -> int:
+        # Insert account data and return the id
+        account_id = await self.pg_conn.fetchval(
             """
             INSERT INTO accounts (tg_id, username, api_id, api_hash, phone, fullname)
             VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
         """,
             tg_id,
             username,
@@ -234,6 +238,7 @@ class NewAccountProcessor(ProcessorBase):
             phone,
             fullname,
         )
+        return account_id
 
     async def account_exists(self, phone: str) -> bool:
         count = await self.pg_conn.fetchval(

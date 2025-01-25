@@ -26,6 +26,9 @@ class AccountHeartbeatProcessor(ProcessorBase):
         self.accounts = accounts
         self.session_upload_at = int(time.time()) + 600
 
+    async def add_accounts(self, new_accounts: list[Account]):
+        self.accounts.extend(new_accounts)
+
     async def process(self) -> int:
         if not self.pg_conn:
             self.pg_conn = await asyncpg.connect(DATABASE_URL)
