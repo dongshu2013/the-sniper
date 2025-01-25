@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 NEW_ACCOUNT_REQUEST_KEY = f"{SERVICE_PREFIX}:new_account_request"
+DEFAULT_TIMEOUT = 900
 
 
 def phone_code_key(phone: str) -> str:
@@ -102,14 +103,14 @@ class NewAccountProcessor(ProcessorBase):
                 old_task.cancel()
                 logger.info(f"Cancelled old task for {request.phone}")
                 await self.redis_client.set(
-                    phone_status_key(request.phone), "cancelled", ex=600
+                    phone_status_key(request.phone), "cancelled", ex=DEFAULT_TIMEOUT
                 )
                 return
 
             # Wrap process_request with timeout of 15 minutes
             task = asyncio.create_task(
                 asyncio.wait_for(
-                    self.process_request(request), timeout=900
+                    self.process_request(request), timeout=DEFAULT_TIMEOUT
                 )  # 15 minutes in seconds
             )
             task.add_done_callback(
@@ -153,7 +154,7 @@ class NewAccountProcessor(ProcessorBase):
         except Exception as e:
             logger.error(f"Error creating Telegram client for {request.phone}: {e}")
             await self.redis_client.set(
-                phone_status_key(request.phone), "error", ex=600
+                phone_status_key(request.phone), "error", ex=DEFAULT_TIMEOUT
             )
             return
 
@@ -210,9 +211,7 @@ class NewAccountProcessor(ProcessorBase):
             logger.error(f"Error processing request for {request.phone}: {e}")
             status = "error"
         finally:
-            await self.redis_client.set(
-                phone_status_key(request.phone), status, ex=1200
-            )
+            await self.redis_client.set(phone_status_key(request.phone), status, ex=900)
             await client.disconnect()
 
     async def add_new_account(
