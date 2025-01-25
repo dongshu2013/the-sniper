@@ -7,6 +7,7 @@ from typing import Optional
 import asyncpg
 import phonenumbers
 import redis.asyncio as Redis
+import telethon
 from pydantic import BaseModel
 from telethon import TelegramClient
 
@@ -35,6 +36,10 @@ DEFAULT_TIMEOUT = 900
 
 def phone_code_key(phone: str) -> str:
     return f"{SERVICE_PREFIX}:phone_code:{phone}"
+
+
+def phone_password_key(phone: str) -> str:
+    return f"{SERVICE_PREFIX}:phone_password:{phone}"
 
 
 def phone_status_key(phone: str) -> str:
@@ -110,8 +115,8 @@ class NewAccountProcessor(ProcessorBase):
             # Wrap process_request with timeout of 15 minutes
             task = asyncio.create_task(
                 asyncio.wait_for(
-                    self.process_request(request), timeout=DEFAULT_TIMEOUT
-                )  # 15 minutes in seconds
+                    self.process_request(request), timeout=DEFAULT_TIMEOUT * 2
+                )  # 30 minutes in seconds
             )
             task.add_done_callback(
                 lambda t, phone=request.phone: self._handle_task_exception(t, phone)
@@ -167,7 +172,7 @@ class NewAccountProcessor(ProcessorBase):
 
             logger.info(f"Waiting for code for {request.phone}")
             code = None
-            for _ in range(300):  # wait for 5 minutes
+            for _ in range(600):  # wait for 10 minutes
                 code = await self.redis_client.get(phone_code_key(request.phone))
                 if code:
                     code = int(code.decode("utf-8"))
@@ -177,12 +182,32 @@ class NewAccountProcessor(ProcessorBase):
 
             if not code:
                 logger.error(f"Failed to get phone code for {request.phone}")
-                return
+                raise Exception("Failed to get phone code")
 
             logger.info(f"Signing in to {request.phone}")
-            await client.sign_in(
-                phone=request.phone, code=code, phone_code_hash=phone_code_hash
-            )
+            try:
+                await client.sign_in(
+                    phone=request.phone, code=code, phone_code_hash=phone_code_hash
+                )
+            except telethon.errors.SessionPasswordNeededError:
+                logger.info(f"Password is needed for {request.phone}")
+                await self.redis_client.set(
+                    phone_status_key(request.phone), "2fa", ex=DEFAULT_TIMEOUT
+                )
+                for _ in range(600):  # wait for 10 minutes
+                    password = await self.redis_client.get(
+                        phone_password_key(request.phone)
+                    )
+                    if password:
+                        password = password.decode("utf-8")
+                        logger.info(f"Got password for {request.phone} as {password}")
+                        break
+                    await asyncio.sleep(1)  # Cancellation can happen here
+                if not password:
+                    logger.error(f"Failed to get password for {request.phone}")
+                    raise Exception("Failed to get password")
+                await client.sign_in(password=password)
+
             me = await client.get_me()
             tg_id = str(me.id)
             logger.info(f"Uploading session file for {tg_id}({request.phone})")
