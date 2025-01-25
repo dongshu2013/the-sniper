@@ -102,7 +102,7 @@ class ChatMessage(BaseModel):
     reply_to: Optional[str] = None
     topic_id: Optional[str] = None
     buttons: list[ChatMessageButton] = []
-    reactions: Optional[MessageReaction] = []
+    reactions: list[MessageReaction] = []
     message_timestamp: int
 
     class Config:

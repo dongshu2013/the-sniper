@@ -48,7 +48,7 @@ async def update_account_status(
         """
         UPDATE accounts SET status = $1 WHERE id = ANY($2)
         """,
-        status,
+        status.value,
         account_ids,
     )
 
@@ -58,8 +58,8 @@ async def reset_account_status(pg_conn: asyncpg.Connection):
         """
         UPDATE accounts SET status = $1 WHERE status = $2
         """,
-        AccountStatus.ACTIVE,
-        AccountStatus.RUNNING,
+        AccountStatus.ACTIVE.value,
+        AccountStatus.RUNNING.value,
     )
 
 
