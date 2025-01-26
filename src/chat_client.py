@@ -50,6 +50,7 @@ async def run():
                 new_accounts = await load_accounts(pg_conn)
                 if new_accounts:
                     new_accounts = await init_accounts(pg_conn, new_accounts)
+                    logger.info(f"Loaded {len(new_accounts)} new accounts")
                     for account in new_accounts:
                         tg_link_proc = TgLinkPreProcessor(account.client)
                         group_proc = GroupProcessor(account.client)
