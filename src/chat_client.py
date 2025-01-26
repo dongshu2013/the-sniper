@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 
 import asyncpg
 from redis.asyncio import Redis
@@ -95,6 +96,15 @@ async def init_accounts(pg_conn: asyncpg.Connection, accounts: list[Account]):
         if not session_file:
             logger.error(f"Failed to download session file for account {account.tg_id}")
             continue
+
+        # Ensure proper file permissions for the session file
+        try:
+            session_db = f"{session_file}.session"
+            if os.path.exists(session_db):
+                os.chmod(session_db, 0o600)  # Read/write for owner only
+        except Exception as e:
+            logger.warning(f"Failed to set session file permissions: {e}")
+
         if ip_usage["localhost"] <= MAX_CLIENTS_PER_IP:
             account.ip = "localhost"
             logger.info(f"Running account {account.tg_id} on localhost")
