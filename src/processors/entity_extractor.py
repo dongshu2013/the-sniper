@@ -20,87 +20,150 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-BATCH_SIZE = 10
 EVALUATION_WINDOW_SECONDS = 3600 * 24
 
 
 class EntityExtractor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=3600)
-        self.batch_size = BATCH_SIZE
-        self.pg_conn = None
+        super().__init__(interval=EVALUATION_WINDOW_SECONDS)
+        self.batch_size = 20
+        self.pg_pool = None
         self.agent_client = AgentClient()
+        self.queue = asyncio.Queue()
+        self.workers = []
+
+    async def prepare(self):
+        self.pg_pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=self.batch_size, max_size=self.batch_size
+        )
+        self.workers = [
+            asyncio.create_task(self.evalute_chat_item())
+            for _ in range(self.batch_size)
+        ]
+        logger.info(f"{self.__class__.__name__} processor initiated")
 
     async def process(self):
-        if not self.pg_conn:
-            self.pg_conn = await asyncpg.connect(DATABASE_URL)
-
-        chat_metadata = await self._get_chat_metadata()
-        if not chat_metadata:
-            logger.info("no groups to process")
-            await asyncio.sleep(30)
-            return
-
-        logger.info(f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}")
-        recent_messages = await self._get_latest_messages(chat_metadata)
-        context = await self._gather_context(chat_metadata, recent_messages)
-
-        classification = await self._classify_chat(context)
-        logger.info(f"classification result: {classification}")
-        parsed_classification = parse_ai_response(
-            classification, ["category", "entity"]
-        )
-        if not parsed_classification:
-            logger.info("no classification found")
-            await self.pg_conn.execute(
+        async with self.pg_pool.acquire() as conn:
+            rows = await conn.fetch(
                 """
-                UPDATE chat_metadata
-                SET evaluated_at = $1
-                WHERE chat_id = $2
+                SELECT id, chat_id, name, username, about, participants_count,
+                pinned_messages, initial_messages, admins, category, category_metadata,
+                entity, entity_metadata, ai_about
+                FROM chat_metadata
+                WHERE category_metadata is null and evaluated_at < $1
+                ORDER BY evaluated_at ASC
                 """,
-                int(time.time()),
-                chat_metadata.chat_id,
+                int(time.time()) - EVALUATION_WINDOW_SECONDS,
             )
-            return
+            if not rows:
+                logger.info("no groups to process")
+                return
 
-        category = parsed_classification.get("category")
-        description = parsed_classification.get("description", "No Data")
-        entity = parsed_classification.get("entity")
-        logger.info(f"classification: {parsed_classification}")
+            for row in rows:
+                await self.queue.put(await self._to_chat_metadata(row, conn))
+            logger.info(f"enqueueing {len(rows)} groups")
 
-        update_query = """
-            UPDATE chat_metadata
-            SET category = $1,
-                entity = $2,
-                ai_about = $3,
-                evaluated_at = $4
-            WHERE chat_id = $5
-        """
-        await self.pg_conn.execute(
-            update_query,
-            category,
-            json.dumps(entity),
-            description,
-            int(time.time()),
-            chat_metadata.chat_id,
-        )
+    async def evalute_chat_item(self):
+        while True:
+            chat_metadata = await self.queue.get()
+            async with self.pg_pool.acquire() as conn:
+                logger.info(
+                    f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}"
+                )
+                recent_messages = await self._get_latest_messages(chat_metadata, conn)
+                context = await self._gather_context(
+                    chat_metadata, recent_messages, conn
+                )
 
-    async def _get_chat_metadata(self) -> ChatMetadata:
-        row = await self.pg_conn.fetchrow(
-            """
-            SELECT id, chat_id, name, username, about, participants_count,
-            pinned_messages, initial_messages, admins
-            FROM chat_metadata
-            WHERE evaluated_at < $1
-            ORDER BY evaluated_at ASC
-            LIMIT 1
-            """,
-            int(time.time()) - EVALUATION_WINDOW_SECONDS,
-        )
-        if not row:
-            logger.info("no groups to process")
-            return
+                classification = await self._classify_chat(context, conn)
+                logger.info(f"classification result: {classification}")
+                parsed_classification = parse_ai_response(classification)
+                if not parsed_classification:
+                    logger.info("no classification found")
+                    await conn.execute(
+                        """
+                            UPDATE chat_metadata
+                            SET evaluated_at = $1
+                            WHERE chat_id = $2
+                            """,
+                        int(time.time()),
+                        chat_metadata.chat_id,
+                    )
+                    return
 
+                logger.info(f"classification: {parsed_classification}")
+                description = parsed_classification.get("description")
+                category_data = parsed_classification.get("category", {})
+                entity_data = parsed_classification.get("entity", {})
+
+                if isinstance(category_data, dict):
+                    category = category_data.get("data")
+                    category_metadata = {
+                        "ai_genereated": category_data.get("data"),
+                        "confidence": category_data.get("confidence", 0),
+                        "reason": category_data.get("reason", ""),
+                    }
+                else:
+                    category = None
+                    category_metadata = {
+                        "ai_genereated": None,
+                        "confidence": -1,
+                        "reason": "Failed to evaluate category",
+                    }
+                old_category_metadata = chat_metadata.category_metadata
+                if category_metadata.get("confidence") < old_category_metadata.get(
+                    "confidence", 0
+                ):
+                    category = chat_metadata.category
+                    category_metadata = old_category_metadata
+
+                if isinstance(entity_data, dict):
+                    entity = entity_data.get("data")
+                    entity_metadata = {
+                        "ai_genereated": entity_data.get("data"),
+                        "confidence": entity_data.get("confidence", 0),
+                        "reason": entity_data.get("reason", ""),
+                    }
+                else:
+                    entity = None
+                    entity_metadata = {
+                        "ai_genereated": None,
+                        "confidence": -1,
+                        "reason": "Failed to evaluate entity",
+                    }
+
+                old_entity_metadata = chat_metadata.entity_metadata
+                if entity_metadata.get("confidence") < old_entity_metadata.get(
+                    "confidence", 0
+                ):
+                    entity = chat_metadata.entity
+                    entity_metadata = old_entity_metadata
+
+                update_query = """
+                        UPDATE chat_metadata
+                        SET category = $1,
+                            category_metadata = $2,
+                            entity = $3,
+                            entity_metadata = $4,
+                            ai_about = $5,
+                            evaluated_at = $6
+                        WHERE chat_id = $7
+                    """
+                await conn.execute(
+                    update_query,
+                    category,
+                    json.dumps(category_metadata),
+                    json.dumps(entity),
+                    json.dumps(entity_metadata),
+                    description,
+                    int(time.time()),
+                    chat_metadata.chat_id,
+                )
+                logger.info(
+                    f"updated group: {chat_metadata.chat_id} - {chat_metadata.name}"
+                )
+
+    async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
         pinned_messages = json.loads(row["pinned_messages"] or "[]")
         initial_messages = json.loads(row["initial_messages"] or "[]")
         admins = json.loads(row["admins"] or "[]")
@@ -109,7 +172,7 @@ class EntityExtractor(ProcessorBase):
         message_ids.update(pinned_messages)
         message_ids.update(initial_messages)
 
-        message_rows = await self.pg_conn.fetch(
+        message_rows = await conn.fetch(
             """
             SELECT chat_id, message_id, reply_to, topic_id,
             sender_id, message_text, buttons, message_timestamp
@@ -123,6 +186,10 @@ class EntityExtractor(ProcessorBase):
             msg_row["message_id"]: db_row_to_chat_message(msg_row)
             for msg_row in message_rows
         }
+
+        entity = json.loads(row["entity"] or "{}")
+        category_metadata = json.loads(row["category_metadata"] or "{}")
+        entity_metadata = json.loads(row["entity_metadata"] or "{}")
         return ChatMetadata(
             chat_id=row["chat_id"],
             name=row["name"],
@@ -140,12 +207,17 @@ class EntityExtractor(ProcessorBase):
                 if message_id in messages
             ],
             admins=admins,
+            category=row["category"],
+            category_metadata=category_metadata,
+            entity=entity,
+            entity_metadata=entity_metadata,
+            ai_about=row["ai_about"],
         )
 
     async def _get_latest_messages(
-        self, chat_metadata: ChatMetadata, limit: int = 10
+        self, chat_metadata: ChatMetadata, conn, limit: int = 10
     ) -> list[ChatMessage]:
-        rows = await self.pg_conn.fetch(
+        rows = await conn.fetch(
             """
             SELECT chat_id, message_id, reply_to, topic_id,
             sender_id, message_text, buttons, message_timestamp
@@ -165,7 +237,7 @@ class EntityExtractor(ProcessorBase):
         return messages
 
     async def _gather_context(
-        self, chat_metadata: ChatMetadata, recent_messages: list[ChatMessage]
+        self, chat_metadata: ChatMetadata, recent_messages: list[ChatMessage], conn
     ) -> Optional[str]:
         """Gather context from various sources in the chat."""
         context_parts = []
@@ -199,8 +271,8 @@ class EntityExtractor(ProcessorBase):
         context = "\n".join(filter(None, context_parts))
         return context[:24000]  # Limit total context length to be safe
 
-    async def _classify_chat(self, context: str) -> str | None:
-        return await self.agent_client.chat_completion(
+    async def _classify_chat(self, context: str, conn) -> str | None:
+        response = await self.agent_client.chat_completion(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
@@ -221,6 +293,7 @@ class EntityExtractor(ProcessorBase):
             temperature=0.1,  # Lower temperature for more consistent results
             response_format={"type": "json_object"},  # Ensure JSON response
         )
+        return response
 
 
 # flake8: noqa: E501
@@ -239,8 +312,9 @@ PORTAL_GROUP
 - Primary indicators:
   * Group name typically contains "Portal"
   * Contains bot verification messages (Safeguard, Rose, Captcha)
-  * Has "verify" or "human verification" button/link
-  * Only few messages posted by the group owner, no user messages
+  * Has "verify", "tap to verify" or "human verification" button/link
+  * Very few messages posted by the group owner, no user messages and no recent messages
+  * If the group doesn't contain any human verification related messages, do not classify it as PORTAL_GROUP
 
 CRYPTO_PROJECT
 - Primary indicators:
@@ -335,11 +409,35 @@ For VIRTUAL_CAPITAL:
 
 For all others: null
 
+
+General Guidelines:
+- For every category and entity, return the data, confidence of your evaluation, and reason for result and confidence
+- If you don't have the enough data to evaluate entity, return null as the data, and 0 as the confidence, and reason as "No enough data to evaluate"
+- If you don't have the enough data to evaluate category, return null as the data, return 0 as the confidence, and reason as "Not enough data to evaluate confidence"
+- If you don't have the enough data to evaluate description, return "no_enough_data"
+
 OUTPUT FORMAT:
 {
-    "category": "CATEGORY_NAME",
+    "category": {
+        "data": "CATEGORY_NAME",
+        "confidence": 0-100,
+        "reason": "REASON_FOR_CONFIDENCE",
+        },
     "description": "DESCRIPTION_OF_THE_GROUP",
-    "entity": {entity_object_or_null},
+    "entity": {
+        "data": {entity_object_or_null},
+        "confidence": 0-100,
+        "reason": "REASON_FOR_CONFIDENCE",
+    }
 }
 """
 # format: on
+
+
+def main():
+    processor = EntityExtractor()
+    asyncio.run(processor.start_processing())
+
+
+if __name__ == "__main__":
+    main()

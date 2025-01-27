@@ -142,6 +142,7 @@ async def store_messages(
             DO UPDATE SET
                 message_text = EXCLUDED.message_text,
                 message_timestamp = EXCLUDED.message_timestamp,
+                buttons = EXCLUDED.buttons,
                 reactions = EXCLUDED.reactions
             """,
             [

@@ -128,6 +128,11 @@ class ChatMetadata(BaseModel):
     pinned_messages: list[ChatMessage] = []
     initial_messages: list[ChatMessage] = []
     admins: list[str] = []
+    category: Optional[str] = None
+    category_metadata: Optional[dict] = None
+    entity: Optional[dict] = None
+    entity_metadata: Optional[dict] = None
+    ai_about: Optional[str] = None
 
 
 class Account(BaseModel):
