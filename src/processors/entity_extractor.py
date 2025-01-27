@@ -26,7 +26,7 @@ EVALUATION_WINDOW_SECONDS = 3600 * 24
 
 class EntityExtractor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=1)
+        super().__init__(interval=3600)
         self.batch_size = BATCH_SIZE
         self.pg_conn = None
         self.agent_client = AgentClient()
