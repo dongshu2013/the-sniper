@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     is_blocked BOOLEAN DEFAULT FALSE,
     status VARCHAR(255) DEFAULT 'evaluating', -- deprecated
     evaluated_at BIGINT DEFAULT 0,
+    entity_metadata JSONB DEFAULT NULL, -- {ai_generated, human_corrected, confidence, reason} 
+    category_metadata JSONB DEFAULT NULL,
+    quality_score_metadata JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
