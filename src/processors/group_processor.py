@@ -37,8 +37,9 @@ GROUP_UPDATE_INTERVAL = 3600
 
 
 class GroupProcessor(ProcessorBase):
-    def __init__(self, client: TelegramClient):
+    def __init__(self, account_id: str, client: TelegramClient):
         super().__init__(interval=3600)
+        self.account_id = account_id
         self.client = client
         self.pg_conn = None
 
@@ -72,6 +73,8 @@ class GroupProcessor(ProcessorBase):
                     "photo": None,
                     "category": None,
                     "category_metadata": None,
+                    "entity": None,
+                    "entity_metadata": None,
                     "updated_at": datetime.now() - timedelta(hours=2),
                 },
             )
@@ -88,7 +91,11 @@ class GroupProcessor(ProcessorBase):
             logger.info(f"processing group {dialog.name}")
             status = chat_info.get("status", ChatStatus.EVALUATING.value)
             if status == ChatStatus.BLOCKED.value:
-                logger.info(f"skipping blocked or low quality group {dialog.name}")
+                logger.info(f"skipping blocked group {dialog.name}")
+                continue
+
+            if chat_info.get("category") == "PORTAL_GROUP":
+                await self.leave_group(chat_id, dialog, me)
                 continue
 
             # 1. Get group description
@@ -364,3 +371,30 @@ class GroupProcessor(ProcessorBase):
                 return ChatType.GIGA_GROUP.value
             return ChatType.CHANNEL.value
         return ChatType.GROUP.value
+
+    async def leave_group(self, chat_id: str, dialog: any, me: any):
+        logger.info(f"skipping group {dialog.name}")
+        try:
+            await self.client.leave_chat(dialog.entity)
+            async with self.pg_conn.transaction():
+                await self.pg_conn.execute(
+                    """
+                    UPDATE chat_metadata
+                    SET status = $1
+                    WHERE chat_id = $2
+                    """,
+                    ChatStatus.BLOCKED.value,
+                    chat_id,
+                )
+                await self.pg_conn.execute(
+                    """
+                    UPDATE account_chat
+                    SET status = $1
+                    WHERE chat_id = $2 AND account_id = $3
+                    """,
+                    AccountChatStatus.QUIT.value,
+                    chat_id,
+                    str(me.id),
+                )
+        except Exception as e:
+            logger.error(f"Failed to leave portal group: {e}")

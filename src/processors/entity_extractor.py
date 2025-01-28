@@ -50,9 +50,8 @@ class EntityExtractor(ProcessorBase):
                 pinned_messages, initial_messages, admins, category, category_metadata,
                 entity, entity_metadata, ai_about, last_message_timestamp
                 FROM chat_metadata
-                WHERE evaluated_at < $1::bigint
                 """
-            params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
+            params = []
 
             if self.processing_ids:
                 query += " AND chat_id != ALL($2)"
@@ -91,11 +90,8 @@ class EntityExtractor(ProcessorBase):
                     if not await self.should_evaluate(
                         chat_metadata, last_message_timestamp
                     ):
-                        logger.info(
-                            f"skipping group: {chat_metadata.chat_id} - {chat_metadata.name}"
-                        )
                         await self._record_skipping_evaluation(chat_metadata, conn)
-                        raise Exception("no classification result")
+                        raise Exception("skipping group")
 
                     context = await self._gather_context(
                         chat_metadata, recent_messages, conn
@@ -164,20 +160,29 @@ class EntityExtractor(ProcessorBase):
             return False
 
         chat_metadata.last_message_timestamp = last_message_timestamp
+        category_metadata = chat_metadata.category_metadata
         # category is not evaluated
-        if not chat_metadata.category_metadata:
+        if not category_metadata:
             return True
 
         # category is not confident
-        category_confidence = chat_metadata.category_metadata.get("confidence", -1)
-        if category_confidence < 50:
+        if category_metadata.get("confidence", -1) < 50:
             return True
 
         # category is confident, only evaluate if it is KOL or CRYPTO_PROJECT
-        return (
+        if (
             chat_metadata.category == "KOL"
             or chat_metadata.category == "CRYPTO_PROJECT"
+        ):
+            entity_metadata = chat_metadata.entity_metadata
+            if entity_metadata and entity_metadata.get("confidence", -1) < 50:
+                return True
+
+        logger.info(
+            f"not kol or crypto project or entity data is already well covered:"
+            f" {chat_metadata.chat_id} - {chat_metadata.name}"
         )
+        return False
 
     async def _record_skipping_evaluation(self, chat_metadata: ChatMetadata, conn):
         await conn.execute(
@@ -209,10 +214,13 @@ class EntityExtractor(ProcessorBase):
                 "confidence": -1,
                 "reason": "Failed to evaluate",
             }
-        old_field_metadata = chat_metadata.get(field_name + "_metadata")
+
+        # Use getattr instead of get() for accessing ChatMetadata attributes
+        old_field_metadata = getattr(chat_metadata, field_name + "_metadata", {})
         if field_metadata.get("confidence") < old_field_metadata.get("confidence", 0):
-            field = chat_metadata.get(field_name)
+            field = getattr(chat_metadata, field_name, None)
             field_metadata = old_field_metadata
+
         return (field, field_metadata)
 
     async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
