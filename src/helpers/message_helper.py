@@ -137,7 +137,7 @@ async def store_messages(
                 buttons,
                 reactions
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (chat_id, message_id)
             DO UPDATE SET
                 message_text = EXCLUDED.message_text,

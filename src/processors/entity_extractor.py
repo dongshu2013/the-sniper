@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-EVALUATION_WINDOW_SECONDS = 3600 * 72
+EVALUATION_WINDOW_SECONDS = 3600 * 72  # 3 days
 
 
 class EntityExtractor(ProcessorBase):
