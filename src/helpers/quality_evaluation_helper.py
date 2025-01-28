@@ -52,12 +52,6 @@ Evaluation Guidelines:
 2. Category alignment: How well the content matches the declared category
 3. Community health (for groups only): User engagement, spam levels, and discussion atmosphere
 
-You must return a JSON object with exactly two fields:
-{
-    "score": float,           # Overall quality score (0-10)
-    "category_alignment": float  # How well content matches the category (0-10)
-}
-
 Scoring Guidelines by Category:
 - PORTAL_GROUP: Content/verification quality (8-10: excellent, 4-7: moderate, 0-3: poor)
 - CRYPTO_PROJECT: Updates & information (8-10: high-value, 4-7: moderate, 0-3: minimal)
@@ -81,6 +75,14 @@ Category Alignment Indicators:
 4-6: Medium alignment (mixed content)
 7-9: High alignment (mostly relevant)
 10: Perfect alignment (fully relevant)
+
+# Output
+
+You must return a JSON object with exactly two fields:
+{
+    "score": float,           # Overall quality score (0-10)
+    "category_alignment": float  # How well content matches the category (0-10)
+}
 """
 
 # format: on
