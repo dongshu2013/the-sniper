@@ -70,6 +70,8 @@ class GroupProcessor(ProcessorBase):
                     "admins": [],
                     "pinned_messages": [],
                     "photo": None,
+                    "category": None,
+                    "category_metadata": None,
                     "updated_at": datetime.now() - timedelta(hours=2),
                 },
             )

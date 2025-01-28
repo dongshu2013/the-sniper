@@ -51,7 +51,6 @@ class EntityExtractor(ProcessorBase):
                 entity, entity_metadata, ai_about, last_message_timestamp
                 FROM chat_metadata
                 WHERE evaluated_at < $1::bigint
-                AND COALESCE((category_metadata->>'confidence')::numeric, -1) <= 50
                 """
             params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
 
@@ -77,7 +76,7 @@ class EntityExtractor(ProcessorBase):
 
     async def evaluate_chat_item(self):
         while self.running:
-            chat_metadata = await self.queue.get()
+            chat_metadata: ChatMetadata = await self.queue.get()
             logger.info(
                 f"processing group: {chat_metadata.name}, left {self.queue.qsize()} groups"
             )
@@ -89,45 +88,23 @@ class EntityExtractor(ProcessorBase):
                     last_message_timestamp = await self._get_last_message_timestamp(
                         chat_metadata, recent_messages
                     )
-                    if (
-                        last_message_timestamp == 0
-                        or last_message_timestamp
-                        <= chat_metadata.last_message_timestamp
+                    if not await self.should_evaluate(
+                        chat_metadata, last_message_timestamp
                     ):
                         logger.info(
-                            f"no new message in {chat_metadata.name}, "
-                            f"last message timestamp: {last_message_timestamp}"
+                            f"skipping group: {chat_metadata.chat_id} - {chat_metadata.name}"
                         )
-                        await conn.execute(
-                            """
-                                UPDATE chat_metadata
-                                SET evaluated_at = $1
-                                WHERE chat_id = $2
-                                """,
-                            int(time.time()),
-                            chat_metadata.chat_id,
-                        )
-                        raise Exception("no new message")
+                        await self._record_skipping_evaluation(chat_metadata, conn)
+                        raise Exception("no classification result")
 
                     context = await self._gather_context(
                         chat_metadata, recent_messages, conn
                     )
-
                     classification = await self._classify_chat(context, conn)
                     logger.info(f"classification result: {classification}")
                     parsed_classification = parse_ai_response(classification)
                     if not parsed_classification:
-                        await conn.execute(
-                            """
-                                UPDATE chat_metadata
-                                SET evaluated_at = $1,
-                                    last_message_timestamp = $2
-                                WHERE chat_id = $3
-                                """,
-                            int(time.time()),
-                            last_message_timestamp,
-                            chat_metadata.chat_id,
-                        )
+                        await self._record_skipping_evaluation(chat_metadata, conn)
                         raise Exception("no classification result")
 
                     logger.info(f"classification: {parsed_classification}")
@@ -135,49 +112,12 @@ class EntityExtractor(ProcessorBase):
                     category_data = parsed_classification.get("category", {})
                     entity_data = parsed_classification.get("entity", {})
 
-                    if isinstance(category_data, dict):
-                        category = category_data.get("data")
-                        category_metadata = {
-                            "ai_genereated": category_data.get("data"),
-                            "confidence": category_data.get("confidence", 0),
-                            "reason": category_data.get("reason", ""),
-                        }
-                    else:
-                        category = None
-                        category_metadata = {
-                            "ai_genereated": None,
-                            "confidence": -1,
-                            "reason": "Failed to evaluate category",
-                        }
-                    old_category_metadata = chat_metadata.category_metadata
-                    if category_metadata.get("confidence") < old_category_metadata.get(
-                        "confidence", 0
-                    ):
-                        category = chat_metadata.category
-                        category_metadata = old_category_metadata
-
-                    if isinstance(entity_data, dict):
-                        entity = entity_data.get("data")
-                        entity_metadata = {
-                            "ai_genereated": entity_data.get("data"),
-                            "confidence": entity_data.get("confidence", 0),
-                            "reason": entity_data.get("reason", ""),
-                        }
-                    else:
-                        entity = None
-                        entity_metadata = {
-                            "ai_genereated": None,
-                            "confidence": -1,
-                            "reason": "Failed to evaluate entity",
-                        }
-
-                    old_entity_metadata = chat_metadata.entity_metadata
-                    if entity_metadata.get("confidence") < old_entity_metadata.get(
-                        "confidence", 0
-                    ):
-                        entity = chat_metadata.entity
-                        entity_metadata = old_entity_metadata
-
+                    (category, category_metadata) = self.update_field_metadata(
+                        "category", category_data, chat_metadata
+                    )
+                    (entity, entity_metadata) = self.update_field_metadata(
+                        "entity", entity_data, chat_metadata
+                    )
                     update_query = """
                             UPDATE chat_metadata
                             SET category = $1,
@@ -209,6 +149,71 @@ class EntityExtractor(ProcessorBase):
             finally:
                 self.processing_ids.remove(chat_metadata.chat_id)
                 self.queue.task_done()
+
+    async def should_evaluate(
+        self, chat_metadata: ChatMetadata, last_message_timestamp: int
+    ) -> bool:
+        if (
+            last_message_timestamp == 0
+            or last_message_timestamp <= chat_metadata.last_message_timestamp
+        ):
+            logger.info(
+                f"no new message in {chat_metadata.name}, "
+                f"last message timestamp: {last_message_timestamp}"
+            )
+            return False
+
+        chat_metadata.last_message_timestamp = last_message_timestamp
+        # category is not evaluated
+        if not chat_metadata.category_metadata:
+            return True
+
+        # category is not confident
+        category_confidence = chat_metadata.category_metadata.get("confidence", -1)
+        if category_confidence < 50:
+            return True
+
+        # category is confident, only evaluate if it is KOL or CRYPTO_PROJECT
+        return (
+            chat_metadata.category == "KOL"
+            or chat_metadata.category == "CRYPTO_PROJECT"
+        )
+
+    async def _record_skipping_evaluation(self, chat_metadata: ChatMetadata, conn):
+        await conn.execute(
+            """
+                UPDATE chat_metadata
+                SET evaluated_at = $1,
+                    last_message_timestamp = $2
+                WHERE chat_id = $3
+                """,
+            int(time.time()),
+            chat_metadata.last_message_timestamp,
+            chat_metadata.chat_id,
+        )
+
+    def update_field_metadata(
+        self, field_name: str, field_value: any, chat_metadata: ChatMetadata
+    ):
+        if isinstance(field_value, dict):
+            field = field_value.get("data")
+            field_metadata = {
+                "ai_genereated": field_value.get("data"),
+                "confidence": field_value.get("confidence", 0),
+                "reason": field_value.get("reason", ""),
+            }
+        else:
+            field = None
+            field_metadata = {
+                "ai_genereated": None,
+                "confidence": -1,
+                "reason": "Failed to evaluate",
+            }
+        old_field_metadata = chat_metadata.get(field_name + "_metadata")
+        if field_metadata.get("confidence") < old_field_metadata.get("confidence", 0):
+            field = chat_metadata.get(field_name)
+            field_metadata = old_field_metadata
+        return (field, field_metadata)
 
     async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
         pinned_messages = json.loads(row["pinned_messages"] or "[]")
