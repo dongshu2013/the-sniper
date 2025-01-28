@@ -133,6 +133,7 @@ class ChatMetadata(BaseModel):
     entity: Optional[dict] = None
     entity_metadata: Optional[dict] = None
     ai_about: Optional[str] = None
+    last_message_timestamp: int = 0
 
 
 class Account(BaseModel):

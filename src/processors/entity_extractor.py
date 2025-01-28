@@ -48,7 +48,7 @@ class EntityExtractor(ProcessorBase):
             query = """
                 SELECT id, chat_id, name, username, about, participants_count,
                 pinned_messages, initial_messages, admins, category, category_metadata,
-                entity, entity_metadata, ai_about
+                entity, entity_metadata, ai_about, last_message_timestamp
                 FROM chat_metadata
                 WHERE evaluated_at < $1::bigint
                 AND COALESCE((category_metadata->>'confidence')::numeric, -1) <= 50
@@ -76,7 +76,7 @@ class EntityExtractor(ProcessorBase):
             logger.info(f"enqueued {len(rows)} groups")
 
     async def evaluate_chat_item(self):
-        while True:
+        while self.running:
             chat_metadata = await self.queue.get()
             logger.info(
                 f"processing group: {chat_metadata.name}, left {self.queue.qsize()} groups"
@@ -86,15 +86,18 @@ class EntityExtractor(ProcessorBase):
                     recent_messages = await self._get_latest_messages(
                         chat_metadata, conn
                     )
-                    context = await self._gather_context(
-                        chat_metadata, recent_messages, conn
+                    last_message_timestamp = await self._get_last_message_timestamp(
+                        chat_metadata, recent_messages
                     )
-
-                    classification = await self._classify_chat(context, conn)
-                    logger.info(f"classification result: {classification}")
-                    parsed_classification = parse_ai_response(classification)
-                    if not parsed_classification:
-                        logger.info("no classification found")
+                    if (
+                        last_message_timestamp == 0
+                        or last_message_timestamp
+                        <= chat_metadata.last_message_timestamp
+                    ):
+                        logger.info(
+                            f"no new message in {chat_metadata.name}, "
+                            f"last message timestamp: {last_message_timestamp}"
+                        )
                         await conn.execute(
                             """
                                 UPDATE chat_metadata
@@ -104,7 +107,28 @@ class EntityExtractor(ProcessorBase):
                             int(time.time()),
                             chat_metadata.chat_id,
                         )
-                        continue
+                        raise Exception("no new message")
+
+                    context = await self._gather_context(
+                        chat_metadata, recent_messages, conn
+                    )
+
+                    classification = await self._classify_chat(context, conn)
+                    logger.info(f"classification result: {classification}")
+                    parsed_classification = parse_ai_response(classification)
+                    if not parsed_classification:
+                        await conn.execute(
+                            """
+                                UPDATE chat_metadata
+                                SET evaluated_at = $1,
+                                    last_message_timestamp = $2
+                                WHERE chat_id = $3
+                                """,
+                            int(time.time()),
+                            last_message_timestamp,
+                            chat_metadata.chat_id,
+                        )
+                        raise Exception("no classification result")
 
                     logger.info(f"classification: {parsed_classification}")
                     description = parsed_classification.get("description")
@@ -161,8 +185,9 @@ class EntityExtractor(ProcessorBase):
                                 entity = $3,
                                 entity_metadata = $4,
                                 ai_about = $5,
-                                evaluated_at = $6
-                            WHERE chat_id = $7
+                                evaluated_at = $6,
+                                last_message_timestamp = $7
+                            WHERE chat_id = $8
                         """
                     logger.info(f"updating group: {chat_metadata.chat_id}")
                     await conn.execute(
@@ -173,11 +198,14 @@ class EntityExtractor(ProcessorBase):
                         json.dumps(entity_metadata),
                         description,
                         int(time.time()),
+                        last_message_timestamp,
                         chat_metadata.chat_id,
                     )
                     logger.info(
                         f"updated group: {chat_metadata.chat_id} - {chat_metadata.name}"
                     )
+            except Exception as e:
+                logger.error(f"error processing group: {chat_metadata.chat_id} - {e}")
             finally:
                 self.processing_ids.remove(chat_metadata.chat_id)
                 self.queue.task_done()
@@ -231,10 +259,11 @@ class EntityExtractor(ProcessorBase):
             entity=entity,
             entity_metadata=entity_metadata,
             ai_about=row["ai_about"],
+            last_message_timestamp=row["last_message_timestamp"],
         )
 
     async def _get_latest_messages(
-        self, chat_metadata: ChatMetadata, conn, limit: int = 10
+        self, chat_metadata: ChatMetadata, conn, limit: int = 50
     ) -> list[ChatMessage]:
         rows = await conn.fetch(
             """
@@ -289,6 +318,30 @@ class EntityExtractor(ProcessorBase):
 
         context = "\n".join(filter(None, context_parts))
         return context[:24000]  # Limit total context length to be safe
+
+    async def _get_last_message_timestamp(
+        self, chat_metadata: ChatMetadata, recent_messages: list[ChatMessage]
+    ) -> int:
+        timestamps = []
+
+        # Get timestamp from recent messages
+        if recent_messages:
+            timestamps.append(recent_messages[-1].message_timestamp)
+
+        # Get timestamps from pinned messages
+        if chat_metadata.pinned_messages:
+            timestamps.extend(
+                msg.message_timestamp for msg in chat_metadata.pinned_messages
+            )
+
+        # Get timestamps from initial messages
+        if chat_metadata.initial_messages:
+            timestamps.extend(
+                msg.message_timestamp for msg in chat_metadata.initial_messages
+            )
+
+        # Return the most recent timestamp, or fallback to last_message_timestamp
+        return max(timestamps) if timestamps else chat_metadata.last_message_timestamp
 
     async def _classify_chat(self, context: str, conn) -> str | None:
         response = await self.agent_client.chat_completion(

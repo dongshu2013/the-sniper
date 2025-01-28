@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     entity_metadata JSONB DEFAULT NULL, -- {ai_generated, human_corrected, confidence, reason}
     category_metadata JSONB DEFAULT NULL,
     quality_score_metadata JSONB DEFAULT NULL,
+    last_message_timestamp BIGINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
