@@ -25,10 +25,11 @@ EVALUATION_WINDOW_SECONDS = 3600 * 72
 
 class EntityExtractor(ProcessorBase):
     def __init__(self):
-        super().__init__(interval=EVALUATION_WINDOW_SECONDS)
+        super().__init__(interval=60)
         self.batch_size = 20
         self.pg_pool = None
         self.agent_client = AgentClient()
+        self.processing_ids = set()
         self.queue = asyncio.Queue()
         self.workers = []
 
@@ -50,118 +51,126 @@ class EntityExtractor(ProcessorBase):
                 pinned_messages, initial_messages, admins, category, category_metadata,
                 entity, entity_metadata, ai_about
                 FROM chat_metadata
-                WHERE category_metadata is null and evaluated_at < $1
+                WHERE category_metadata is null and evaluated_at < $1 and chat_id not in ($2)
                 ORDER BY evaluated_at ASC
                 """,
                 int(time.time()) - EVALUATION_WINDOW_SECONDS,
+                tuple(self.processing_ids),
             )
             if not rows:
                 logger.info("no groups to process")
                 return
 
             for row in rows:
+                self.processing_ids.add(row["chat_id"])
                 await self.queue.put(await self._to_chat_metadata(row, conn))
             logger.info(f"enqueueing {len(rows)} groups")
 
     async def evalute_chat_item(self):
         while True:
             chat_metadata = await self.queue.get()
-            async with self.pg_pool.acquire() as conn:
-                logger.info(
-                    f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}"
-                )
-                recent_messages = await self._get_latest_messages(chat_metadata, conn)
-                context = await self._gather_context(
-                    chat_metadata, recent_messages, conn
-                )
+            try:
+                async with self.pg_pool.acquire() as conn:
+                    logger.info(
+                        f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}"
+                    )
+                    recent_messages = await self._get_latest_messages(
+                        chat_metadata, conn
+                    )
+                    context = await self._gather_context(
+                        chat_metadata, recent_messages, conn
+                    )
 
-                classification = await self._classify_chat(context, conn)
-                logger.info(f"classification result: {classification}")
-                parsed_classification = parse_ai_response(classification)
-                if not parsed_classification:
-                    logger.info("no classification found")
-                    await conn.execute(
-                        """
+                    classification = await self._classify_chat(context, conn)
+                    logger.info(f"classification result: {classification}")
+                    parsed_classification = parse_ai_response(classification)
+                    if not parsed_classification:
+                        logger.info("no classification found")
+                        await conn.execute(
+                            """
+                                UPDATE chat_metadata
+                                SET evaluated_at = $1
+                                WHERE chat_id = $2
+                                """,
+                            int(time.time()),
+                            chat_metadata.chat_id,
+                        )
+                        return
+
+                    logger.info(f"classification: {parsed_classification}")
+                    description = parsed_classification.get("description")
+                    category_data = parsed_classification.get("category", {})
+                    entity_data = parsed_classification.get("entity", {})
+
+                    if isinstance(category_data, dict):
+                        category = category_data.get("data")
+                        category_metadata = {
+                            "ai_genereated": category_data.get("data"),
+                            "confidence": category_data.get("confidence", 0),
+                            "reason": category_data.get("reason", ""),
+                        }
+                    else:
+                        category = None
+                        category_metadata = {
+                            "ai_genereated": None,
+                            "confidence": -1,
+                            "reason": "Failed to evaluate category",
+                        }
+                    old_category_metadata = chat_metadata.category_metadata
+                    if category_metadata.get("confidence") < old_category_metadata.get(
+                        "confidence", 0
+                    ):
+                        category = chat_metadata.category
+                        category_metadata = old_category_metadata
+
+                    if isinstance(entity_data, dict):
+                        entity = entity_data.get("data")
+                        entity_metadata = {
+                            "ai_genereated": entity_data.get("data"),
+                            "confidence": entity_data.get("confidence", 0),
+                            "reason": entity_data.get("reason", ""),
+                        }
+                    else:
+                        entity = None
+                        entity_metadata = {
+                            "ai_genereated": None,
+                            "confidence": -1,
+                            "reason": "Failed to evaluate entity",
+                        }
+
+                    old_entity_metadata = chat_metadata.entity_metadata
+                    if entity_metadata.get("confidence") < old_entity_metadata.get(
+                        "confidence", 0
+                    ):
+                        entity = chat_metadata.entity
+                        entity_metadata = old_entity_metadata
+
+                    update_query = """
                             UPDATE chat_metadata
-                            SET evaluated_at = $1
-                            WHERE chat_id = $2
-                            """,
+                            SET category = $1,
+                                category_metadata = $2,
+                                entity = $3,
+                                entity_metadata = $4,
+                                ai_about = $5,
+                                evaluated_at = $6
+                            WHERE chat_id = $7
+                        """
+                    await conn.execute(
+                        update_query,
+                        category,
+                        json.dumps(category_metadata),
+                        json.dumps(entity),
+                        json.dumps(entity_metadata),
+                        description,
                         int(time.time()),
                         chat_metadata.chat_id,
                     )
-                    return
-
-                logger.info(f"classification: {parsed_classification}")
-                description = parsed_classification.get("description")
-                category_data = parsed_classification.get("category", {})
-                entity_data = parsed_classification.get("entity", {})
-
-                if isinstance(category_data, dict):
-                    category = category_data.get("data")
-                    category_metadata = {
-                        "ai_genereated": category_data.get("data"),
-                        "confidence": category_data.get("confidence", 0),
-                        "reason": category_data.get("reason", ""),
-                    }
-                else:
-                    category = None
-                    category_metadata = {
-                        "ai_genereated": None,
-                        "confidence": -1,
-                        "reason": "Failed to evaluate category",
-                    }
-                old_category_metadata = chat_metadata.category_metadata
-                if category_metadata.get("confidence") < old_category_metadata.get(
-                    "confidence", 0
-                ):
-                    category = chat_metadata.category
-                    category_metadata = old_category_metadata
-
-                if isinstance(entity_data, dict):
-                    entity = entity_data.get("data")
-                    entity_metadata = {
-                        "ai_genereated": entity_data.get("data"),
-                        "confidence": entity_data.get("confidence", 0),
-                        "reason": entity_data.get("reason", ""),
-                    }
-                else:
-                    entity = None
-                    entity_metadata = {
-                        "ai_genereated": None,
-                        "confidence": -1,
-                        "reason": "Failed to evaluate entity",
-                    }
-
-                old_entity_metadata = chat_metadata.entity_metadata
-                if entity_metadata.get("confidence") < old_entity_metadata.get(
-                    "confidence", 0
-                ):
-                    entity = chat_metadata.entity
-                    entity_metadata = old_entity_metadata
-
-                update_query = """
-                        UPDATE chat_metadata
-                        SET category = $1,
-                            category_metadata = $2,
-                            entity = $3,
-                            entity_metadata = $4,
-                            ai_about = $5,
-                            evaluated_at = $6
-                        WHERE chat_id = $7
-                    """
-                await conn.execute(
-                    update_query,
-                    category,
-                    json.dumps(category_metadata),
-                    json.dumps(entity),
-                    json.dumps(entity_metadata),
-                    description,
-                    int(time.time()),
-                    chat_metadata.chat_id,
-                )
-                logger.info(
-                    f"updated group: {chat_metadata.chat_id} - {chat_metadata.name}"
-                )
+                    logger.info(
+                        f"updated group: {chat_metadata.chat_id} - {chat_metadata.name}"
+                    )
+            finally:
+                self.processing_ids.remove(chat_metadata.chat_id)
+                self.queue.task_done()
 
     async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
         pinned_messages = json.loads(row["pinned_messages"] or "[]")
