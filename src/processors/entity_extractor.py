@@ -38,7 +38,7 @@ class EntityExtractor(ProcessorBase):
             DATABASE_URL, min_size=self.batch_size, max_size=self.batch_size
         )
         self.workers = [
-            asyncio.create_task(self.evalute_chat_item())
+            asyncio.create_task(self.evaluate_chat_item())
             for _ in range(self.batch_size)
         ]
         logger.info(f"{self.__class__.__name__} processor initiated")
@@ -50,7 +50,11 @@ class EntityExtractor(ProcessorBase):
                 pinned_messages, initial_messages, admins, category, category_metadata,
                 entity, entity_metadata, ai_about
                 FROM chat_metadata
-                WHERE category_metadata is null and evaluated_at < $1::bigint
+                WHERE evaluated_at < $1::bigint
+                AND (
+                    COALESCE((category_metadata->>'confidence')::numeric, -1) <= 50
+                    OR COALESCE((entity_metadata->>'confidence')::numeric, -1) <= 50
+                )
                 """
             params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
 
@@ -65,19 +69,23 @@ class EntityExtractor(ProcessorBase):
                 logger.info("no groups to process")
                 return
 
-            for row in rows:
-                self.processing_ids.add(row["chat_id"])
-                await self.queue.put(await self._to_chat_metadata(row, conn))
             logger.info(f"enqueueing {len(rows)} groups")
+            for row in rows:
+                if row["chat_id"] in self.processing_ids:
+                    continue
+                self.processing_ids.add(row["chat_id"])
+                chat_metadata = await self._to_chat_metadata(row, conn)
+                await self.queue.put(chat_metadata)
+            logger.info(f"enqueued {len(rows)} groups")
 
-    async def evalute_chat_item(self):
+    async def evaluate_chat_item(self):
         while True:
             chat_metadata = await self.queue.get()
+            logger.info(
+                f"processing group: {chat_metadata.name}, left {self.queue.qsize()} groups"
+            )
             try:
                 async with self.pg_pool.acquire() as conn:
-                    logger.info(
-                        f"processing group: {chat_metadata.chat_id} - {chat_metadata.name}"
-                    )
                     recent_messages = await self._get_latest_messages(
                         chat_metadata, conn
                     )
@@ -99,7 +107,7 @@ class EntityExtractor(ProcessorBase):
                             int(time.time()),
                             chat_metadata.chat_id,
                         )
-                        return
+                        continue
 
                     logger.info(f"classification: {parsed_classification}")
                     description = parsed_classification.get("description")
@@ -159,6 +167,7 @@ class EntityExtractor(ProcessorBase):
                                 evaluated_at = $6
                             WHERE chat_id = $7
                         """
+                    logger.info(f"updating group: {chat_metadata.chat_id}")
                     await conn.execute(
                         update_query,
                         category,
