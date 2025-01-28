@@ -45,18 +45,22 @@ class EntityExtractor(ProcessorBase):
 
     async def process(self):
         async with self.pg_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
+            query = """
                 SELECT id, chat_id, name, username, about, participants_count,
                 pinned_messages, initial_messages, admins, category, category_metadata,
                 entity, entity_metadata, ai_about
                 FROM chat_metadata
-                WHERE category_metadata is null and evaluated_at < $1 and chat_id not in ($2)
-                ORDER BY evaluated_at ASC
-                """,
-                int(time.time()) - EVALUATION_WINDOW_SECONDS,
-                tuple(self.processing_ids),
-            )
+                WHERE category_metadata is null and evaluated_at < $1
+                """
+            params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
+
+            if self.processing_ids:
+                query += " AND chat_id != ALL($2)"
+                params.append(list(self.processing_ids))
+
+            query += " ORDER BY evaluated_at ASC"
+
+            rows = await conn.fetch(query, *params)
             if not rows:
                 logger.info("no groups to process")
                 return
