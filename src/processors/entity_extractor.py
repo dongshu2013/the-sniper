@@ -20,7 +20,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-EVALUATION_WINDOW_SECONDS = 3600 * 72  # 3 days
+EVALUATION_WINDOW_SECONDS = 3600 * 24  # 3 days
 
 
 class EntityExtractor(ProcessorBase):
@@ -48,10 +48,12 @@ class EntityExtractor(ProcessorBase):
             query = """
                 SELECT id, chat_id, name, username, about, participants_count,
                 pinned_messages, initial_messages, admins, category, category_metadata,
-                entity, entity_metadata, ai_about, last_message_timestamp
+                entity, entity_metadata, ai_about, last_message_timestamp,
+                evaluated_at
                 FROM chat_metadata
+                WHERE evaluated_at < $1
                 """
-            params = []
+            params = [int(time.time() - EVALUATION_WINDOW_SECONDS)]
 
             if self.processing_ids:
                 query += " AND chat_id != ALL($2)"
