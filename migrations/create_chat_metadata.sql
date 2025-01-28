@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS chat_metadata (
     is_blocked BOOLEAN DEFAULT FALSE,
     status VARCHAR(255) DEFAULT 'evaluating', -- deprecated
     evaluated_at BIGINT DEFAULT 0,
+    entity_metadata JSONB DEFAULT NULL, -- {ai_generated, human_corrected, confidence, reason}
+    category_metadata JSONB DEFAULT NULL,
+    quality_score_metadata JSONB DEFAULT NULL,
+    last_message_timestamp BIGINT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -29,3 +33,11 @@ CREATE INDEX idx_chat_metadata_is_blocked ON chat_metadata(is_blocked);
 CREATE INDEX idx_chat_metadata_quality_score ON chat_metadata(quality_score);
 CREATE INDEX idx_chat_metadata_evaluated_at ON chat_metadata(evaluated_at);
 CREATE INDEX idx_chat_metadata_type ON chat_metadata(type);
+
+-- Index for category confidence
+CREATE INDEX idx_chat_metadata_category_confidence
+ON chat_metadata (COALESCE((category_metadata->>'confidence')::numeric, -1));
+
+-- Index for entity confidence
+CREATE INDEX idx_chat_metadata_entity_confidence
+ON chat_metadata (COALESCE((entity_metadata->>'confidence')::numeric, -1));

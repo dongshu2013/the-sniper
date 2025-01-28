@@ -8,9 +8,13 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/postgres")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+DEEPSEEK_MODEL_NAME = "deepseek-chat"
+
 OPENROUTER_API_URL: str = "https://openrouter.ai/api/v1/"
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-chat")
+MODEL_NAME: str = os.getenv("MODEL_NAME", "deepseek/deepseek-r1-distill-llama-70b")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com")
 
 SERVICE_PREFIX = "the_sinper_bot"
 MESSAGE_QUEUE_KEY = f"{SERVICE_PREFIX}:message_queue"

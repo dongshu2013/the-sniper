@@ -30,57 +30,46 @@ CATEGORY_ALIGNMENT_WEIGHT = 0.3
 # flake8: noqa: E501
 # format: off
 
-QUALITY_EVALUATION_PROMPT = """
-You are an expert in evaluating Telegram group quality. Analyze the given messages and evaluate the chat quality based on group category, type and messages.
+QUALITY_EVALUATION_PROMPT = """You are an expert in evaluating Telegram group quality. Your task is to analyze messages and return a JSON object with quality metrics.
 
-Group Types and Evaluation Focus:
-- channel/megagroup: Focus on content quality and category alignment only (ignore discussion metrics)
-- group/gigagroup: Evaluate both content and discussion quality
-
-Group Category Guidelines:
-- PORTAL_GROUP: Evaluate based on verification process efficiency and user flow
-- CRYPTO_PROJECT: Focus on project updates, community engagement, and technical discussions
-- KOL: Evaluate content quality, expert insights, and community interaction
-- VIRTUAL_CAPITAL: Look for investment discussions, deal flow, and professional networking
-- EVENT: Check event organization, participant engagement, and information sharing
-- TECH_DISCUSSION: Assess technical depth, problem-solving, and knowledge sharing
-- FOUNDER: Evaluate startup discussions, mentorship quality, and networking value
-- OTHERS: General community engagement and value delivery
-
-Evaluation Guidelines:
-1. Content quality: Information value and relevance to category
-2. Category alignment: How well the content matches the declared category
-3. Community health (for groups only): User engagement, spam levels, and discussion atmosphere
-
-You must return a JSON object with exactly two fields:
+RESPONSE FORMAT:
+You must respond with a valid JSON object containing exactly these fields:
 {
-    "score": float,           # Overall quality score (0-10)
-    "category_alignment": float  # How well content matches the category (0-10)
+    "score": <number between 0-10>,
+    "category_alignment": <number between 0-10>
 }
 
-Scoring Guidelines by Category:
-- PORTAL_GROUP: Content/verification quality (8-10: excellent, 4-7: moderate, 0-3: poor)
-- CRYPTO_PROJECT: Updates & information (8-10: high-value, 4-7: moderate, 0-3: minimal)
-- KOL: Content quality (8-10: valuable, 4-7: mixed, 0-3: poor)
-- VIRTUAL_CAPITAL: Information quality (8-10: high-value, 4-7: moderate, 0-3: low)
-- EVENT: Organization & info (8-10: well organized, 4-7: adequate, 0-3: poor)
-- TECH_DISCUSSION: Technical content (8-10: deep, 4-7: moderate, 0-3: superficial)
-- FOUNDER: Value & insights (8-10: valuable, 4-7: moderate, 0-3: low)
-- OTHERS: Content value (8-10: high, 4-7: moderate, 0-3: low)
+EVALUATION CRITERIA:
 
-General Quality Indicators:
-0: Dead/inactive
-1-3: Low quality (irrelevant/spam)
-4-6: Medium quality (some value)
-7-9: High quality (consistent value)
-10: Excellent (exceptional)
+1. Quality Score (score):
+- 0: Dead/inactive group
+- 1-3: Low quality (spam/irrelevant)
+- 4-6: Medium quality (some value)
+- 7-9: High quality (consistent value)
+- 10: Excellent (exceptional)
 
-Category Alignment Indicators:
-0: No relevance to category
-1-3: Low alignment (mostly off-topic)
-4-6: Medium alignment (mixed content)
-7-9: High alignment (mostly relevant)
-10: Perfect alignment (fully relevant)
+2. Category Alignment (category_alignment):
+- 0: No relevance to category
+- 1-3: Low alignment (mostly off-topic)
+- 4-6: Medium alignment (mixed content)
+- 7-9: High alignment (mostly relevant)
+- 10: Perfect alignment
+
+Consider these factors by group type:
+- channel/megagroup: Focus on content quality and category alignment
+- group/gigagroup: Evaluate both content and discussion quality
+
+Evaluate based on category:
+- PORTAL_GROUP: Verification process efficiency
+- CRYPTO_PROJECT: Project updates and community engagement
+- KOL: Content quality and expert insights
+- VIRTUAL_CAPITAL: Investment discussions and networking
+- EVENT: Event organization and information
+- TECH_DISCUSSION: Technical depth and problem-solving
+- FOUNDER: Startup discussions and mentorship
+- OTHERS: General community value
+
+Remember: Your response must be a single JSON object with exactly two numeric fields: "score" and "category_alignment".
 """
 
 # format: on
@@ -191,7 +180,7 @@ async def process_chat_worker(
                         {"role": "system", "content": QUALITY_EVALUATION_PROMPT},
                         {
                             "role": "user",
-                            "content": f"Group Category: {category or 'OTHERS'}\nGroup Type: {chat_type}\n\nMessages:\n{messages_text}",
+                            "content": f"Evaluate this group:\nCategory: {category or 'OTHERS'}\nType: {chat_type}\n\nMessages:\n{messages_text}",
                         },
                     ],
                     temperature=0.1,

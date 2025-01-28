@@ -5,7 +5,12 @@ from typing import Optional
 import asyncpg
 from telethon.tl.types import Message
 
-from src.common.types import ChatMessage, ChatMessageButton, MessageReaction
+from src.common.types import (
+    ChatMessage,
+    ChatMessageButton,
+    MessageReaction,
+    MessageSender,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +87,17 @@ def to_chat_message(message: Message) -> ChatMessage | None:
 
     from_id = getattr(message, "from_id", {})
     sender_id = getattr(from_id, "user_id", None)
+    sender = MessageSender(
+        id=str(sender_id),
+        username=from_id.username,
+        name=from_id.name,
+        photo=from_id.photo.url,
+    )
     return ChatMessage(
         message_id=message_id,
         chat_id=chat_id,
         message_text=message.text,
-        sender_id=str(sender_id),
+        sender=sender,
         message_timestamp=int(message.date.timestamp()),
         reply_to=str(reply_to) if reply_to else None,
         topic_id=str(topic_id) if topic_id else None,
@@ -121,15 +132,17 @@ async def store_messages(
                 reply_to,
                 topic_id,
                 sender_id,
+                sender,
                 message_timestamp,
                 buttons,
                 reactions
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (chat_id, message_id)
             DO UPDATE SET
                 message_text = EXCLUDED.message_text,
                 message_timestamp = EXCLUDED.message_timestamp,
+                buttons = EXCLUDED.buttons,
                 reactions = EXCLUDED.reactions
             """,
             [
@@ -139,7 +152,8 @@ async def store_messages(
                     m.message_text,
                     m.reply_to,
                     m.topic_id,
-                    m.sender_id,
+                    m.sender_id if m.sender_id else None,
+                    json.dumps(m.sender.model_dump()) if m.sender else None,
                     m.message_timestamp,
                     json.dumps([b.model_dump() for b in m.buttons]),
                     json.dumps([r.model_dump() for r in m.reactions]),

@@ -94,11 +94,19 @@ class MessageReaction(BaseModel):
     count: int
 
 
+class MessageSender(BaseModel):
+    id: str
+    username: Optional[str] = None
+    name: Optional[str] = None
+    photo: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     message_id: str
     chat_id: str
     message_text: str
-    sender_id: Optional[str] = None
+    sender_id: Optional[str] = None  # TODO: deprecate once migrated to sender
+    sender: Optional[MessageSender] = None
     reply_to: Optional[str] = None
     topic_id: Optional[str] = None
     buttons: list[ChatMessageButton] = []
@@ -120,6 +128,12 @@ class ChatMetadata(BaseModel):
     pinned_messages: list[ChatMessage] = []
     initial_messages: list[ChatMessage] = []
     admins: list[str] = []
+    category: Optional[str] = None
+    category_metadata: Optional[dict] = None
+    entity: Optional[dict] = None
+    entity_metadata: Optional[dict] = None
+    ai_about: Optional[str] = None
+    last_message_timestamp: int = 0
 
 
 class Account(BaseModel):

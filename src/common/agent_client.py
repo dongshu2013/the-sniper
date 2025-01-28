@@ -12,10 +12,6 @@ class AgentClient:
         self.client = AsyncOpenAI(
             api_key=OPENROUTER_API_KEY,
             base_url=OPENROUTER_API_URL,
-            default_headers={
-                "HTTP-Referer": "https://your-site.com",
-                "X-Title": "the-sniper",
-            },
         )
         self.model = MODEL_NAME
         logger.info(f"Using model: {self.model}")
@@ -23,6 +19,7 @@ class AgentClient:
     async def chat_completion(
         self, messages, temperature=0.1, response_format=None
     ) -> str | None:
+        logger.info(f"Sending message to {self.model}")
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -32,4 +29,5 @@ class AgentClient:
         if response.choices:
             return response.choices[0].message.content
         else:
+            logger.error(f"No response from {self.model}: {response}")
             return None
