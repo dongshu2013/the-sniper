@@ -183,9 +183,8 @@ async def process_chat_worker(
                             "content": f"Evaluate this group:\nCategory: {category or 'OTHERS'}\nType: {chat_type}\n\nMessages:\n{messages_text}",
                         },
                     ],
-                    temperature=0.0,
+                    temperature=0.1,
                     response_format={"type": "json_object"},
-                    max_tokens=100,
                 )
 
                 if not response:
