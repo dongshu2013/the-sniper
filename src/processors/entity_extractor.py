@@ -51,10 +51,7 @@ class EntityExtractor(ProcessorBase):
                 entity, entity_metadata, ai_about
                 FROM chat_metadata
                 WHERE evaluated_at < $1::bigint
-                AND (
-                    COALESCE((category_metadata->>'confidence')::numeric, -1) <= 50
-                    OR COALESCE((entity_metadata->>'confidence')::numeric, -1) <= 50
-                )
+                AND COALESCE((category_metadata->>'confidence')::numeric, -1) <= 50
                 """
             params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
 
