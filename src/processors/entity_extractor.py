@@ -50,7 +50,7 @@ class EntityExtractor(ProcessorBase):
                 pinned_messages, initial_messages, admins, category, category_metadata,
                 entity, entity_metadata, ai_about
                 FROM chat_metadata
-                WHERE category_metadata is null and evaluated_at < $1
+                WHERE category_metadata is null and evaluated_at < $1::bigint
                 """
             params = [int(time.time()) - EVALUATION_WINDOW_SECONDS]
 
