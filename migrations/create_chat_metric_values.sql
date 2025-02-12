@@ -2,8 +2,6 @@ CREATE TABLE chat_metric_values (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) NOT NULL,         -- 关联的群组ID
     metric_definition_id INTEGER NOT NULL,  -- 关联的 metric 定义
-    is_enabled BOOLEAN DEFAULT TRUE,        -- 是否启用
-    display_order INTEGER DEFAULT 0,        -- 显示顺序
     value TEXT,                            -- 计算结果
     confidence DECIMAL(4,2),               -- 置信度
     reason TEXT,                           -- 计算原因
