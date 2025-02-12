@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     sender JSONB DEFAULT '{}',
     reactions JSONB DEFAULT '[]',
     message_timestamp BIGINT NOT NULL,
+    pinned_messages JSONB DEFAULT '[]',    -- 置顶消息
+    initial_messages JSONB DEFAULT '[]',    -- 初始消息
     created_at BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT,
     UNIQUE (chat_id, message_id)
 );
