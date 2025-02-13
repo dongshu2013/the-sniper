@@ -124,16 +124,8 @@ class ChatMetadata(BaseModel):
     name: str
     about: Optional[str]
     username: Optional[str]
-    participants_count: int
-    pinned_messages: list[ChatMessage] = []
-    initial_messages: list[ChatMessage] = []
     admins: list[str] = []
-    category: Optional[str] = None
-    category_metadata: Optional[dict] = None
-    entity: Optional[dict] = None
-    entity_metadata: Optional[dict] = None
-    ai_about: Optional[str] = None
-    last_message_timestamp: int = 0
+    participants_count: int
 
 
 class Account(BaseModel):

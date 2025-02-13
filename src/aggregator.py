@@ -8,6 +8,7 @@ from src.processors.message_queue import MessageQueueProcessor
 from src.processors.new_account import NewAccountProcessor
 from src.processors.quality_evaluation import QualityEvaluationProcessor
 from src.processors.tg_link_importer import TgLinkImporter
+from src.processors.metric_processor import MetricProcessor
 
 # Create logger instance
 logging.basicConfig(
@@ -19,10 +20,11 @@ logger = logging.getLogger(__name__)
 tasks = {
     "tg_link_importer": TgLinkImporter(),
     "msg_queue_processor": MessageQueueProcessor(),
-    "entity_extractor": EntityExtractor(),
-    "quality_evaluation_processor": QualityEvaluationProcessor(),
+    # "entity_extractor": EntityExtractor(),
+    # "quality_evaluation_processor": QualityEvaluationProcessor(),
     "doxx_tweet": DoxxTweetProcessor(),
     "new_account": NewAccountProcessor(),
+    "metric_processor": MetricProcessor(),
 }
 
 

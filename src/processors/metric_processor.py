@@ -1,0 +1,252 @@
+import asyncio
+import json
+import logging
+import time
+from typing import Dict, List, Optional, Tuple
+
+import asyncpg
+
+from src.common.agent_client import AgentClient
+from src.common.config import DATABASE_URL
+from src.common.types import ChatMessage, ChatMetadata
+from src.common.utils import parse_ai_response
+from src.helpers.message_helper import db_row_to_chat_message, gen_message_content
+from src.processors.processor import ProcessorBase
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+class MetricProcessor(ProcessorBase):
+    def __init__(self):
+        super().__init__(interval=60)  # Check every minute
+        self.batch_size = 20
+        self.pg_pool = None
+        self.agent_client = AgentClient()
+        self.processing_ids = set()
+        self.queue = asyncio.Queue()
+        self.workers = []
+        self.metric_definitions = {}
+        # 添加测试模式数据限制
+        self.is_testing = True
+        self.test_limit = 2  # 测试时只处理2条数据
+
+    async def prepare(self):
+        self.pg_pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=self.batch_size, max_size=self.batch_size
+        )
+        # Load metric definitions
+        await self.load_metric_definitions()
+        # Start worker tasks
+        self.workers = [
+            asyncio.create_task(self.process_chat_metrics())
+            for _ in range(self.batch_size)
+        ]
+        logger.info(f"{self.__class__.__name__} processor initiated")
+
+    async def load_metric_definitions(self):
+        """Load all metric definitions from database"""
+        async with self.pg_pool.acquire() as conn:
+            # TODO 
+            # - `chat_metric_definitions.is_preset=TRUE`的`metric_definition_id`，且`account_metric.is_enabled=TRUE`的数据
+            # - 所有`account_metric.account_id`且`account_metric.is_enabled=TRUE`的`metric_definition_id`的数据。
+            rows = await conn.fetch("""
+                SELECT id, name, prompt, model, refresh_interval_hours
+                FROM chat_metric_definitions
+                WHERE is_preset = true
+            """)
+            self.metric_definitions = {
+                row['id']: dict(row) for row in rows
+            }
+            logger.info(f"Loaded {len(self.metric_definitions)} metric definitions")
+
+    async def process(self):
+        """Find chats that need metric updates and queue them for processing"""
+        async with self.pg_pool.acquire() as conn:
+            # Find chats that need metric updates
+            query = """
+                SELECT DISTINCT cm.id, cm.chat_id, cm.name, cm.username, cm.about, 
+                       cm.participants_count, cm.admins
+                FROM chat_metadata cm
+                LEFT JOIN chat_metric_values cmv ON cm.chat_id = cmv.chat_id
+                WHERE cmv.id IS NULL  -- No metrics yet
+                   OR cmv.next_refresh_at <= CURRENT_TIMESTAMP  -- Need refresh
+                   AND cm.chat_id != ALL($1)  -- Not currently processing
+            """
+            if self.is_testing:
+                query = f"""
+                    SELECT * FROM ({query}) sub
+                    ORDER BY RANDOM() LIMIT $2
+                """
+                rows = await conn.fetch(query, list(self.processing_ids), self.test_limit)
+            else:
+                rows = await conn.fetch(query, list(self.processing_ids))
+            
+            if not rows:
+                return
+
+            logger.info(f"Enqueueing {len(rows)} chats for metric processing")
+            for row in rows:
+                if row['chat_id'] in self.processing_ids:
+                    continue
+                self.processing_ids.add(row['chat_id'])
+                logger.info(f"---_to_chat_metadata: {row}")
+                chat_metadata = await self._to_chat_metadata(row, conn)
+                await self.queue.put(chat_metadata)
+
+    async def process_chat_metrics(self):
+        """Worker that processes metrics for each chat"""
+        while self.running:
+            try:
+                chat_metadata = await self.queue.get()
+                logger.info(f"Processing metrics for chat: {chat_metadata.name}")
+                
+                try:
+                    async with self.pg_pool.acquire() as conn:
+                        # Get context data
+                        context = await self._gather_context(chat_metadata, conn)
+                        
+                        # Process each metric
+                        for metric_id, metric_def in self.metric_definitions.items():
+                            try:
+                                # Calculate metric
+                                result = await self._calculate_metric(
+                                    context, 
+                                    metric_def['prompt'],
+                                    metric_def['model']
+                                )
+                                
+                                if result:
+                                    # Store metric value
+                                    await self._store_metric_value(
+                                        conn,
+                                        chat_metadata.chat_id,
+                                        metric_id,
+                                        result['value'],
+                                        result['confidence'],
+                                        result['reason'],
+                                        metric_def['refresh_interval_hours']
+                                    )
+                            except Exception as e:
+                                logger.error(f"Error processing metric {metric_def['name']}: {e}")
+                                
+                except Exception as e:
+                    logger.error(f"Error processing chat {chat_metadata.chat_id}: {e}")
+                finally:
+                    self.processing_ids.remove(chat_metadata.chat_id)
+                    self.queue.task_done()
+                    
+            except Exception as e:
+                logger.error(f"Worker error: {e}")
+                await asyncio.sleep(1)
+
+    async def _calculate_metric(
+        self, context: str, prompt: str, model: str
+    ) -> Optional[Dict]:
+        """Calculate a single metric value using AI"""
+        try:
+            response = await self.agent_client.chat_completion(
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": context}
+                ],
+                # model=model,
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+            result = parse_ai_response(response)
+            logger.info(f"---result: {result}")
+            if not result:
+                return None
+                
+            return {
+                "value": result.get("value"),
+                "confidence": float(result.get("confidence", 0)),
+                "reason": result.get("reason", "")
+            }
+        except Exception as e:
+            logger.error(f"Error calculating metric: {e}")
+            return None
+
+    async def _store_metric_value(
+        self,
+        conn: asyncpg.Connection,
+        chat_id: str,
+        metric_id: int,
+        value: str,
+        confidence: float,
+        reason: str,
+        refresh_interval_hours: int
+    ):
+        """Store a metric value in the database"""
+        logger.info(f"---Storing metric value - chat_id: {chat_id}, metric_id: {metric_id}, "
+            f"value: {value}, confidence: {confidence}, "
+            f"refresh_interval_hours: {refresh_interval_hours}")
+        
+        await conn.execute("""
+            INSERT INTO chat_metric_values (
+                chat_id, metric_definition_id, value, confidence, reason,
+                last_refresh_at, next_refresh_at
+            ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, 
+                     CURRENT_TIMESTAMP + INTERVAL '1 hour' * $6)
+            ON CONFLICT (chat_id, metric_definition_id) DO UPDATE
+            SET value = EXCLUDED.value,
+                confidence = EXCLUDED.confidence,
+                reason = EXCLUDED.reason,
+                last_refresh_at = CURRENT_TIMESTAMP,
+                next_refresh_at = CURRENT_TIMESTAMP + INTERVAL '1 hour' * $6
+        """, chat_id, metric_id, value, confidence, reason, refresh_interval_hours)
+
+    async def _gather_context(
+        self, chat_metadata: ChatMetadata, conn: asyncpg.Connection
+    ) -> str:
+        """Gather context data for metric calculation"""
+        # Get recent messages
+        messages = await self._get_latest_messages(chat_metadata.chat_id, conn)
+        
+        # Build context
+        context_parts = [
+            f"Chat Name: {chat_metadata.name}",
+            f"Description: {chat_metadata.about or 'No description'}",
+            f"Participants: {chat_metadata.participants_count}",
+            "\nRecent Messages:",
+        ]
+        
+        for msg in messages:
+            context_parts.append(gen_message_content(msg))
+            
+        return "\n".join(context_parts)
+
+    async def _get_latest_messages(
+        self, chat_id: str, conn: asyncpg.Connection, limit: int = 50
+    ) -> List[ChatMessage]:
+        """Get recent messages for a chat"""
+        rows = await conn.fetch("""
+            SELECT chat_id, message_id, reply_to, topic_id,
+                   sender_id, message_text, buttons, message_timestamp
+            FROM chat_messages 
+            WHERE chat_id = $1
+            ORDER BY message_timestamp DESC
+            LIMIT $2
+        """, chat_id, limit)
+        
+        messages = [db_row_to_chat_message(row) for row in rows]
+        messages.reverse()
+        return messages
+
+    async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
+        """Convert database row to ChatMetadata object"""
+        
+        admins = json.loads(row["admins"] or "[]")
+
+        return ChatMetadata(
+            chat_id=row['chat_id'],
+            name=row['name'],
+            username=row['username'],
+            about=row['about'],
+            participants_count=row['participants_count'],
+            admins=admins
+        )
