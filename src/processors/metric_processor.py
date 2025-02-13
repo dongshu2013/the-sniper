@@ -147,26 +147,55 @@ class MetricProcessor(ProcessorBase):
     ) -> Optional[Dict]:
         """Calculate a single metric value using AI"""
         try:
+            # Add clear instructions about expected response format
+            system_prompt = prompt.strip()
+            user_prompt = f"""
+Please analyze this Telegram group based on the provided context and guidelines:
+
+{context}
+
+Provide your analysis in the specified JSON format with value, confidence, and reason fields.
+"""
+            
             response = await self.agent_client.chat_completion(
                 messages=[
-                    {"role": "system", "content": prompt},
-                    {"role": "user", "content": context}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
                 ],
-                # model=model,
                 temperature=0.1,
                 response_format={"type": "json_object"}
             )
             
             result = parse_ai_response(response)
-            logger.info(f"---result: {result}")
             if not result:
+                logger.warning("Failed to parse AI response")
+                return None
+                
+            # Validate required fields
+            if not all(k in result for k in ["value", "confidence", "reason"]):
+                logger.warning(f"Missing required fields in result: {result}")
+                return None
+                
+            # Ensure value is not None/empty
+            if not result["value"]:
+                logger.warning(f"Empty value in result: {result}")
+                return None
+                
+            # Ensure confidence is a float between 0-100
+            try:
+                confidence = float(result["confidence"])
+                if not (0 <= confidence <= 100):
+                    raise ValueError("Confidence must be between 0 and 100")
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Invalid confidence value: {e}")
                 return None
                 
             return {
-                "value": result.get("value"),
-                "confidence": float(result.get("confidence", 0)),
-                "reason": result.get("reason", "")
+                "value": str(result["value"]),  # Ensure value is string
+                "confidence": confidence,
+                "reason": str(result.get("reason", ""))  # Ensure reason is string
             }
+            
         except Exception as e:
             logger.error(f"Error calculating metric: {e}")
             return None

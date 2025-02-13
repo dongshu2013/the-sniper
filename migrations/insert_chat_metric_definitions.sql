@@ -15,6 +15,22 @@ INSERT INTO chat_metric_definitions (
     true
 );
 
+INSERT INTO chat_metric_definitions (
+    name,
+    description,
+    prompt,
+    model,
+    refresh_interval_hours,
+    is_preset
+) VALUES (
+    'group_quality_evaluation',
+    'Evaluates Telegram group quality based on message content, engagement and category alignment',
+    E'You are an expert in evaluating Telegram group quality. Your task is to analyze messages and return a JSON object with quality metrics.\n\nEVALUATION CRITERIA:\n\n1. Quality Score:\n- 0: Dead/inactive group\n- 1-3: Low quality (spam/irrelevant)\n- 4-6: Medium quality (some value)\n- 7-9: High quality (consistent value)\n- 10: Excellent (exceptional)\n\n2. Category Alignment (consider when scoring):\n- 0: No relevance to category\n- 1-3: Low alignment (mostly off-topic)\n- 4-6: Medium alignment (mixed content)\n- 7-9: High alignment (mostly relevant)\n- 10: Perfect alignment\n\nConsider these factors by group type:\n- channel/megagroup: Focus on content quality and category alignment\n- group/gigagroup: Evaluate both content and discussion quality\n\nEvaluate based on category:\n- PORTAL_GROUP: Verification process efficiency\n- CRYPTO_PROJECT: Project updates and community engagement\n- KOL: Content quality and expert insights\n- VIRTUAL_CAPITAL: Investment discussions and networking\n- EVENT: Event organization and information\n- TECH_DISCUSSION: Technical depth and problem-solving\n- FOUNDER: Startup discussions and mentorship\n- OTHERS: General community value\n\nOutput format:\n{\n    "value": <number between 0-10>,\n    "confidence": <number between 0-100>,\n    "reason": "Detailed explanation of the score and confidence level"\n}',
+    'gpt-4',
+    24,
+    true
+);
+
 -- Entity Extraction Metric
 -- INSERT INTO chat_metric_definitions (
 --     name,
