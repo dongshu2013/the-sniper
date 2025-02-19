@@ -17,7 +17,6 @@ async def pick_ip_proxy(
     SELECT ip, port, username, password
     FROM ip_pool
     WHERE type = $1
-    AND expired_at > NOW() + INTERVAL '7 days'
     AND ($2::text IS NULL OR region = $2)
     AND running_accounts < $3
     LIMIT $4
