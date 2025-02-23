@@ -99,8 +99,6 @@ class MetricProcessor(ProcessorBase):
                 }
             
             logger.info(f"Loaded metrics for {len(self.metric_definitions)} users")
-            # logger.info(f"---metric_definitions structure: {self.metric_definitions.keys()}")
-            # logger.info(f"---metric_definitions: {self.metric_definitions}")
 
     async def process(self):
         """Find chats that need metric updates and queue them for processing"""
@@ -289,9 +287,6 @@ Provide your analysis in the specified JSON format with value, confidence, and r
         refresh_interval_hours: int
     ):
         """Store a metric value in the database"""
-        logger.info(f"---Storing metric value - chat_id: {chat_id}, metric_id: {metric_id}, "
-            f"value: {value}, confidence: {confidence}, "
-            f"refresh_interval_hours: {refresh_interval_hours}")
         
         await conn.execute("""
             INSERT INTO chat_metric_values (
