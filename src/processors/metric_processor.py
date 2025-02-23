@@ -47,20 +47,60 @@ class MetricProcessor(ProcessorBase):
         logger.info(f"{self.__class__.__name__} processor initiated")
 
     async def load_metric_definitions(self):
-        """Load all metric definitions from database"""
-        async with self.pg_pool.acquire() as conn:
-            # TODO 
-            # - `chat_metric_definitions.is_preset=TRUE`的`metric_definition_id`，且`account_metric.is_enabled=TRUE`的数据
-            # - 所有`account_metric.account_id`且`account_metric.is_enabled=TRUE`的`metric_definition_id`的数据。
-            rows = await conn.fetch("""
-                SELECT id, name, prompt, model, refresh_interval_hours
-                FROM chat_metric_definitions
-                WHERE is_preset = true
-            """)
-            self.metric_definitions = {
-                row['id']: dict(row) for row in rows
+        """
+        Load metric definitions from database, organized by user_id
+        return:
+            {
+                'user_id': {
+                    'metric_id': {
+                        'name': 'metric_name',
+                    }
+                }
             }
-            logger.info(f"Loaded {len(self.metric_definitions)} metric definitions")
+        """
+        async with self.pg_pool.acquire() as conn:
+            # Get preset metrics and user-enabled metrics
+            rows = await conn.fetch("""
+                -- Get preset metrics (available to all users)
+                SELECT DISTINCT 
+                    cmd.id, cmd.name, cmd.prompt, cmd.model, cmd.refresh_interval_hours,
+                    'system' as user_id  -- Use 'system' for preset metrics
+                FROM chat_metric_definitions cmd
+                WHERE cmd.is_preset = true
+                
+                UNION ALL
+                
+                -- Get user-specific enabled metrics
+                SELECT DISTINCT 
+                    cmd.id, cmd.name, cmd.prompt, cmd.model, cmd.refresh_interval_hours,
+                    um.user_id
+                FROM chat_metric_definitions cmd
+                INNER JOIN user_metric um ON cmd.id = um.metric_definition_id
+                WHERE um.is_enabled = true
+                
+                ORDER BY user_id, id
+            """)
+            
+            # Reorganize metrics by user_id
+            self.metric_definitions = {}
+            for row in rows:
+                user_id = row['user_id']
+                metric_id = row['id']
+                
+                if user_id not in self.metric_definitions:
+                    self.metric_definitions[user_id] = {}
+                    
+                self.metric_definitions[user_id][metric_id] = {
+                    'id': metric_id,
+                    'name': row['name'],
+                    'prompt': row['prompt'],
+                    'model': row['model'],
+                    'refresh_interval_hours': row['refresh_interval_hours']
+                }
+            
+            logger.info(f"Loaded metrics for {len(self.metric_definitions)} users")
+            # logger.info(f"---metric_definitions structure: {self.metric_definitions.keys()}")
+            # logger.info(f"---metric_definitions: {self.metric_definitions}")
 
     async def process(self):
         """Find chats that need metric updates and queue them for processing"""

@@ -1,6 +1,7 @@
 CREATE TABLE chat_metric_values (
     id SERIAL PRIMARY KEY,
     chat_id VARCHAR(255) NOT NULL,         -- 关联的群组ID
+    collection_id INTEGER NOT NULL,        -- 关联的 collection ID
     metric_definition_id INTEGER NOT NULL,  -- 关联的 metric 定义
     value TEXT,                            -- 计算结果
     confidence DECIMAL(4,2),               -- 置信度
@@ -13,5 +14,6 @@ CREATE TABLE chat_metric_values (
 );
 
 CREATE INDEX idx_chat_metric_values_chat_id ON chat_metric_values(chat_id);
+CREATE INDEX idx_chat_metric_values_collection_id ON chat_metric_values(collection_id);
 CREATE INDEX idx_chat_metric_values_definition_id ON chat_metric_values(metric_definition_id);
 CREATE INDEX idx_chat_metric_values_next_refresh ON chat_metric_values(next_refresh_at);
