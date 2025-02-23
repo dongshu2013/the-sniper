@@ -105,16 +105,37 @@ class MetricProcessor(ProcessorBase):
     async def process(self):
         """Find chats that need metric updates and queue them for processing"""
         async with self.pg_pool.acquire() as conn:
-            # Find chats that need metric updates
+            # Find chats that need metric updates with user associations
             query = """
-                SELECT DISTINCT cm.id, cm.chat_id, cm.name, cm.username, cm.about, 
-                       cm.participants_count, cm.admins
-                FROM chat_metadata cm
-                LEFT JOIN chat_metric_values cmv ON cm.chat_id = cmv.chat_id
-                WHERE cmv.id IS NULL  -- No metrics yet
-                   OR cmv.next_refresh_at <= CURRENT_TIMESTAMP  -- Need refresh
-                   AND cm.chat_id != ALL($1)  -- Not currently processing
+                WITH user_chats AS (
+                    -- Get all enabled chats for each user through the association chain
+                    SELECT DISTINCT 
+                        u.id as user_id,
+                        cm.id, cm.chat_id, cm.name, cm.username, cm.about, 
+                        cm.participants_count, cm.admins
+                    FROM users u
+                    INNER JOIN user_account ua ON u.id = ua.user_id
+                    INNER JOIN accounts a ON ua.account_id = a.id
+                    INNER JOIN account_chat ac ON a.tg_id = ac.account_id
+                    INNER JOIN chat_metadata cm ON ac.chat_id = cm.chat_id
+                    WHERE ac.status = 'watching'
+                )
+                SELECT 
+                    uc.*,
+                    CASE 
+                        WHEN cmv.id IS NULL THEN true  -- No metrics yet
+                        WHEN cmv.next_refresh_at <= CURRENT_TIMESTAMP THEN true  -- Need refresh
+                        ELSE false
+                    END as needs_refresh
+                FROM user_chats uc
+                LEFT JOIN chat_metric_values cmv ON uc.chat_id = cmv.chat_id
+                WHERE uc.chat_id != ALL($1)  -- Not currently processing
+                AND (
+                    cmv.id IS NULL  -- No metrics yet
+                    OR cmv.next_refresh_at <= CURRENT_TIMESTAMP  -- Need refresh
+                )
             """
+
             if self.is_testing:
                 query = f"""
                     SELECT * FROM ({query}) sub
@@ -127,29 +148,46 @@ class MetricProcessor(ProcessorBase):
             if not rows:
                 return
 
-            logger.info(f"Enqueueing {len(rows)} chats for metric processing")
+            # Organize chats by user_id
+            user_chats = {}
             for row in rows:
+                user_id = row['user_id']
+                if user_id not in user_chats:
+                    user_chats[user_id] = []
+                
                 if row['chat_id'] in self.processing_ids:
                     continue
+                    
                 self.processing_ids.add(row['chat_id'])
-                logger.info(f"---_to_chat_metadata: {row}")
                 chat_metadata = await self._to_chat_metadata(row, conn)
-                await self.queue.put(chat_metadata)
+                user_chats[user_id].append(chat_metadata)
+
+            # Queue chats for processing
+            logger.info(f"Enqueueing chats for {len(user_chats)} users")
+            for user_id, chats in user_chats.items():
+                logger.info(f"User {user_id}: enqueueing {len(chats)} chats")
+                for chat_metadata in chats:
+                    await self.queue.put((user_id, chat_metadata))
 
     async def process_chat_metrics(self):
         """Worker that processes metrics for each chat"""
         while self.running:
             try:
-                chat_metadata = await self.queue.get()
-                logger.info(f"Processing metrics for chat: {chat_metadata.name}")
+                user_id, chat_metadata = await self.queue.get()
+                logger.info(f"Processing metrics for user {user_id}, chat: {chat_metadata.name}")
                 
                 try:
                     async with self.pg_pool.acquire() as conn:
                         # Get context data
                         context = await self._gather_context(chat_metadata, conn)
                         
+                        # Get metrics for this user
+                        user_metrics = self.metric_definitions.get(user_id, {})
+                        system_metrics = self.metric_definitions.get('system', {})
+                        all_metrics = {**system_metrics, **user_metrics}  # User metrics override system metrics
+                        
                         # Process each metric
-                        for metric_id, metric_def in self.metric_definitions.items():
+                        for metric_id, metric_def in all_metrics.items():
                             try:
                                 # Calculate metric
                                 result = await self._calculate_metric(
