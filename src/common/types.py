@@ -124,7 +124,7 @@ class ChatMetadata(BaseModel):
     name: str
     about: Optional[str]
     username: Optional[str]
-    admins: list[str] = []
+    admins: Optional[str]
     participants_count: int
 
 

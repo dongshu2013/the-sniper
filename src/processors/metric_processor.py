@@ -30,7 +30,7 @@ class MetricProcessor(ProcessorBase):
         self.workers = []
         self.metric_definitions = {}
         # 添加测试模式数据限制
-        self.is_testing = False
+        self.is_testing = True
         self.test_limit = 2  # 测试时只处理2条数据
 
     async def prepare(self):
@@ -116,7 +116,7 @@ class MetricProcessor(ProcessorBase):
                     INNER JOIN accounts a ON ua.account_id = a.id
                     INNER JOIN account_chat ac ON a.tg_id = ac.account_id
                     INNER JOIN chat_metadata cm ON ac.chat_id = cm.chat_id
-                    WHERE ac.status = 'watching'
+                    WHERE ac.status = 'watching' AND cm.is_enabled = true
                 )
                 SELECT 
                     uc.*,
@@ -342,23 +342,13 @@ Provide your analysis in the specified JSON format with value, confidence, and r
     async def _to_chat_metadata(self, row: dict, conn) -> ChatMetadata:
         """Convert database row to ChatMetadata object"""
         try:
-            # 确保 admins 是一个列表
-            if isinstance(row["admins"], str):
-                try:
-                    admins = json.loads(row["admins"])
-                except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON in admins field: {row['admins']}, using empty list")
-                    admins = []
-            else:
-                admins = row["admins"] or []
-
             return ChatMetadata(
                 chat_id=row['chat_id'],
                 name=row['name'],
                 username=row['username'],
                 about=row['about'],
                 participants_count=row['participants_count'],
-                admins=admins
+                admins=row['admins']
             )
         except Exception as e:
             logger.error(f"Error converting row to ChatMetadata: {e}, row: {row}")
@@ -369,5 +359,5 @@ Provide your analysis in the specified JSON format with value, confidence, and r
                 username=row['username'] or '',
                 about=row['about'] or '',
                 participants_count=row['participants_count'] or 0,
-                admins=[]
+                admins=row['admins'] or ''
             )
