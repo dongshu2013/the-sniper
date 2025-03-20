@@ -302,8 +302,8 @@ class TelegramSyncClient:
                     "username": group["username"],
                     "about": group["about"],
                     "photo": group["photo_url"],
-                    "participants_count": group["participants_count"],
-                    "is_channel": group["is_channel"]
+                    "participantsCount": group["participants_count"],
+                    "isChannel": group["is_channel"]
                 },
                 "is_public": True  # You might want to make this configurable
             }
