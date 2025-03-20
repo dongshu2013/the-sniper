@@ -1,0 +1,8 @@
+api_base_url: http://localhost:3000/api
+api_key: sk-curifi-681f503db283458395f8a5176a7499cc
+accounts:
+  - telegram_api_id: 24304519
+    telegram_api_hash: 7322ed52ffd5842b566e4aeb09b642a8
+    telegram_phone: "+8801320839940"
+    dialog_limit: 10
+    message_limit: 20

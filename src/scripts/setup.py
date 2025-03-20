@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import logging
 import asyncio
 import time
@@ -24,16 +25,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class TelegramSyncClient:
-    def __init__(self, config_path='config.json'):
-        # Load configuration
-        self.config = self._load_config(config_path)
-        self.api_base_url = self.config.get('api_base_url', 'http://localhost:3000/api')
-        self.api_key = self.config.get('api_key')
+    def __init__(self, config, account_config):
+        # Store base configuration
+        self.api_base_url = config.get('api_base_url', 'http://localhost:3000/api')
+        self.api_key = config.get('api_key')
         
-        # Telegram API credentials
-        self.api_id = self.config.get('telegram_api_id')
-        self.api_hash = self.config.get('telegram_api_hash')
-        self.phone = self.config.get('telegram_phone')
+        # Telegram API credentials from account config
+        self.api_id = account_config.get('telegram_api_id')
+        self.api_hash = account_config.get('telegram_api_hash')
+        self.phone = account_config.get('telegram_phone')
         
         # Create session name from phone number and timestamp
         timestamp = int(time.time())
@@ -42,35 +42,24 @@ class TelegramSyncClient:
         self.session_name = f"{clean_phone}_{timestamp}"
         
         # Dialog sync limit - 设置为None如果配置为0
-        dialog_limit_config = self.config.get('dialog_limit', 100)
+        dialog_limit_config = account_config.get('dialog_limit', 100)
         self.dialog_limit = None if dialog_limit_config == 0 else dialog_limit_config
         
         # Message sync limit - 设置为None如果配置为0
-        message_limit_config = self.config.get('message_limit', 100)
+        message_limit_config = account_config.get('message_limit', 100)
         self.message_limit = None if message_limit_config == 0 else message_limit_config
         
         # Initialize client
         self.client = None
         
-        logger.info(f"Using session name: {self.session_name}")
+        logger.info(f"Using session name: {self.session_name} for phone: {self.phone}")
         logger.info(f"Dialog limit: {self.dialog_limit}, Message limit: {self.message_limit}")
-
-    def _load_config(self, config_path):
-        """Load configuration from JSON file"""
-        try:
-            with open(config_path, 'r') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            logger.error(f"Config file not found: {config_path}")
-            raise
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON in config file: {config_path}")
-            raise
 
     async def connect(self):
         """Connect to Telegram and ensure authorization"""
-        # 改用固定会话名称而不是每次生成新的
-        session_file = "telegram_session"
+        # 使用基于手机号的会话名称以便区分多个账号
+        clean_phone = re.sub(r'[^0-9]', '', self.phone)
+        session_file = f"telegram_session_{clean_phone}"
         self.client = TelegramClient(session_file, self.api_id, self.api_hash)
         
         # 增加重试逻辑和连接超时
@@ -91,13 +80,13 @@ class TelegramSyncClient:
         if not await self.client.is_user_authorized():
             await self.client.send_code_request(self.phone)
             try:
-                code = input('Enter the code you received: ')
+                code = input(f'Enter the code received on {self.phone}: ')
                 await self.client.sign_in(self.phone, code)
             except SessionPasswordNeededError:
                 password = input('Two-step verification enabled. Please enter your password: ')
                 await self.client.sign_in(password=password)
         
-        logger.info("Successfully connected to Telegram")
+        logger.info(f"Successfully connected to Telegram with phone: {self.phone}")
         return self.client
 
     async def get_group_description(self, dialog_entity):
@@ -421,27 +410,64 @@ class TelegramSyncClient:
                 logger.error(f"Error processing group {group['title']}: {e}")
                 continue
         
-        logger.info(f"Sync complete. Total messages synced: {total_messages_synced}")
+        logger.info(f"Sync complete for {self.phone}. Total messages synced: {total_messages_synced}")
         
         # Disconnect
         await self.client.disconnect()
         return {
+            "phone": self.phone,
             "channels_synced": len(channel_ids),
             "messages_synced": total_messages_synced
         }
+
+def load_config(config_path):
+    """Load configuration from YAML file"""
+    try:
+        with open(config_path, 'r') as f:
+            if config_path.endswith('.json'):
+                logger.warning("Using deprecated JSON config format. Please migrate to YAML.")
+                return json.load(f)
+            else:
+                return yaml.safe_load(f)
+    except FileNotFoundError:
+        logger.error(f"Config file not found: {config_path}")
+        raise
+    except (json.JSONDecodeError, yaml.YAMLError) as e:
+        logger.error(f"Invalid config file: {config_path}, Error: {e}")
+        raise
 
 async def main():
     """Main function to run the script"""
     # Check if config path is provided as argument
     import sys
-    config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.json'
+    config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
     
     try:
-        # Initialize and run the sync client
-        client = TelegramSyncClient(config_path)
-        result = await client.sync_all()
+        # Load the configuration
+        config = load_config(config_path)
         
-        logger.info(f"Sync summary: {json.dumps(result)}")
+        # Check if accounts are configured
+        if 'accounts' not in config or not config['accounts']:
+            logger.error("No Telegram accounts configured in config file")
+            return
+        
+        # Process each account
+        all_results = []
+        for account_config in config['accounts']:
+            logger.info(f"Processing account: {account_config.get('telegram_phone')}")
+            
+            # Initialize and run the sync client for this account
+            client = TelegramSyncClient(config, account_config)
+            result = await client.sync_all()
+            all_results.append(result)
+        
+        # Log overall summary
+        total_channels = sum(r['channels_synced'] for r in all_results)
+        total_messages = sum(r['messages_synced'] for r in all_results)
+        
+        logger.info(f"Overall sync summary: {len(all_results)} accounts processed")
+        logger.info(f"Total channels synced: {total_channels}")
+        logger.info(f"Total messages synced: {total_messages}")
         
     except Exception as e:
         logger.error(f"Sync failed with error: {e}")

@@ -181,3 +181,5 @@ config/config.yaml
 
 # Sessions
 sessions/
+src/scripts/setup_env.yaml
+src/scripts/setup_prod.yaml
