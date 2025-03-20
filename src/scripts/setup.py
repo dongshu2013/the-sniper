@@ -5,10 +5,16 @@ import asyncio
 import time
 import re
 import requests
+import imghdr
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.functions.messages import GetDialogsRequest
+from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.functions.messages import GetFullChatRequest
 from telethon.tl.types import InputPeerEmpty
+
+# Import the upload_file function from R2 client
+from src.common.r2_client import upload_file
 
 # Setup logging
 logging.basicConfig(
@@ -35,15 +41,19 @@ class TelegramSyncClient:
         clean_phone = re.sub(r'[^0-9]', '', self.phone)
         self.session_name = f"{clean_phone}_{timestamp}"
         
-        # Message sync limit
-        self.message_limit = self.config.get('message_limit', 100)
-        # Dialog sync limit (新增)
-        self.dialog_limit = self.config.get('dialog_limit', 100)
+        # Dialog sync limit - 设置为None如果配置为0
+        dialog_limit_config = self.config.get('dialog_limit', 100)
+        self.dialog_limit = None if dialog_limit_config == 0 else dialog_limit_config
+        
+        # Message sync limit - 设置为None如果配置为0
+        message_limit_config = self.config.get('message_limit', 100)
+        self.message_limit = None if message_limit_config == 0 else message_limit_config
         
         # Initialize client
         self.client = None
         
         logger.info(f"Using session name: {self.session_name}")
+        logger.info(f"Dialog limit: {self.dialog_limit}, Message limit: {self.message_limit}")
 
     def _load_config(self, config_path):
         """Load configuration from JSON file"""
@@ -90,66 +100,122 @@ class TelegramSyncClient:
         logger.info("Successfully connected to Telegram")
         return self.client
 
+    async def get_group_description(self, dialog_entity):
+        """Get the description (about) of a group or channel"""
+        try:
+            if hasattr(dialog_entity, 'broadcast') or hasattr(dialog_entity, 'megagroup'):
+                # This is a channel or megagroup
+                result = await self.client(GetFullChannelRequest(channel=dialog_entity))
+                return result.full_chat.about or ""
+            else:
+                # This is a regular group
+                result = await self.client(GetFullChatRequest(chat_id=dialog_entity.id))
+                return result.full_chat.about or ""
+        except Exception as e:
+            logger.error(f"Failed to get group description: {e}")
+            return ""
+
+    async def _get_photo_extension(self, file_path):
+        """Detect the file extension of the downloaded photo."""
+        try:
+            img_type = imghdr.what(file_path)
+            if img_type:
+                return f".{img_type}"
+        except Exception as e:
+            logger.error(f"Failed to get photo extension: {e}")
+        return ".jpg"
+
+    async def get_group_photo(self, dialog_entity):
+        """Get the profile photo of a group or channel"""
+        try:
+            new_photo = getattr(dialog_entity, 'photo', {})
+            if not new_photo:
+                return None
+
+            # Could be ChatPhotoEmpty which doesn't have photo field
+            photo_id = getattr(new_photo, 'photo_id', None)
+            if not photo_id:
+                return None
+                
+            # Download the photo
+            temp_photo_path = f"temp_photo_{photo_id}"
+            local_photo_path = await self.client.download_profile_photo(
+                dialog_entity, file=temp_photo_path
+            )
+            
+            if local_photo_path:
+                extension = await self._get_photo_extension(local_photo_path)
+                photo_path = f"photos/{photo_id}{extension}"
+                
+                # Upload the photo to R2 storage
+                upload_file(local_photo_path, photo_path)
+                
+                # Clean up the temporary file
+                try:
+                    os.remove(local_photo_path)
+                except Exception as e:
+                    logger.error(f"Failed to remove local photo: {e}")
+                
+                return {
+                    "id": str(photo_id),
+                    "path": photo_path
+                }
+            
+        except Exception as e:
+            logger.error(f"Failed to get group photo: {e}")
+        
+        return None
+
+    async def get_participants_count(self, dialog_entity):
+        """Get the number of participants in a group or channel"""
+        try:
+            if hasattr(dialog_entity, 'megagroup') or hasattr(dialog_entity, 'broadcast'):
+                # This is a supergroup or channel
+                full_channel = await self.client(GetFullChannelRequest(channel=dialog_entity))
+                return full_channel.full_chat.participants_count
+            elif hasattr(dialog_entity, 'chat_id'):
+                # This is a regular group
+                full_chat = await self.client(GetFullChatRequest(chat_id=dialog_entity.chat_id))
+                return len(full_chat.users)
+            else:
+                # Try to use the attribute directly
+                return getattr(dialog_entity, 'participants_count', 0)
+        except Exception as e:
+            logger.error(f"Failed to get participants count: {e}")
+            return 0
+
     async def get_groups(self):
         """Get all dialogs (chats, groups, channels)"""
-        result = await self.client(GetDialogsRequest(
-            offset_date=None,
-            offset_id=0,
-            offset_peer=InputPeerEmpty(),
-            limit=self.dialog_limit,
-            hash=0
-        ))
-        
-        # Filter for groups and channels only
         groups = []
-        for dialog in result.dialogs:
-            entity = await self.client.get_entity(dialog.peer)
+        
+        # 使用iter_dialogs代替GetDialogsRequest，可以更好地支持无限获取
+        # 类似于group_processor.py中的实现
+        async for dialog in self.client.iter_dialogs(ignore_migrated=True):
+            # 限制对话数量，如果有设置的话
+            if self.dialog_limit is not None and len(groups) >= self.dialog_limit:
+                break
+            
+            # 获取实体
+            entity = dialog.entity
+            
+            # 仅处理组和频道（有标题的对话）
             if hasattr(entity, 'title'):  # Groups/channels have titles
                 try:
-                    # Get additional info about the group
+                    # Get chat ID
                     chat_id = str(entity.id)
-                    photo_url = None
-                    about = None
-                    participants_count = None
                     
-                    # Try to get chat photo if available
-                    try:
-                        if entity.photo:
-                            photo = await self.client.download_profile_photo(entity, file=bytes)
-                            if photo:
-                                # In a real application, you might want to upload this somewhere
-                                # and use the URL instead of raw bytes
-                                photo_url = f"telegram_photo_{chat_id}"
-                    except Exception as e:
-                        logger.warning(f"Failed to get photo for group {entity.title}: {e}")
+                    # Get group description
+                    about = await self.get_group_description(entity)
                     
-                    # Try to get about/description
-                    try:
-                        full_chat = await self.client.get_entity(entity)
-                        if hasattr(full_chat, 'about'):
-                            about = full_chat.about
-                    except Exception as e:
-                        logger.warning(f"Failed to get about for group {entity.title}: {e}")
+                    # Get group photo
+                    photo_data = await self.get_group_photo(entity)
+                    photo_url = photo_data.get('path') if photo_data else None
                     
-                    # 正确获取参与者数量
-                    try:
-                        from telethon.tl.functions.channels import GetFullChannelRequest
-                        from telethon.tl.functions.messages import GetFullChatRequest
-                        
-                        if hasattr(entity, 'megagroup') or hasattr(entity, 'broadcast'):
-                            # 这是一个超级群组或频道
-                            full_channel = await self.client(GetFullChannelRequest(channel=entity))
-                            participants_count = full_channel.full_chat.participants_count
-                        elif hasattr(entity, 'chat_id'):
-                            # 这是一个普通群组
-                            full_chat = await self.client(GetFullChatRequest(chat_id=entity.chat_id))
-                            participants_count = len(full_chat.users)
-                        else:
-                            # 尝试直接使用属性（可能在某些情况下有效）
-                            participants_count = getattr(entity, 'participants_count', 0)
-                    except Exception as e:
-                        logger.warning(f"Failed to get participants count for group {entity.title}: {e}")
-                        participants_count = 0
+                    # Get participants count
+                    participants_count = await self.get_participants_count(entity)
+                    
+                    # Determine if it's a channel
+                    is_channel = hasattr(entity, 'broadcast') and entity.broadcast
                     
                     group_data = {
                         "chat_id": chat_id,
@@ -158,20 +224,17 @@ class TelegramSyncClient:
                         "photo_url": photo_url,
                         "about": about,
                         "participants_count": participants_count,
-                        "is_channel": hasattr(entity, 'broadcast') and entity.broadcast
+                        "is_channel": is_channel
                     }
                     
                     groups.append(group_data)
-                    
-                    # 达到限制数量后退出
-                    if len(groups) >= self.dialog_limit:
-                        break
                     
                 except Exception as e:
                     logger.error(f"Error processing group {getattr(entity, 'title', 'Unknown')}: {e}")
                     continue
         
-        logger.info(f"Found {len(groups)} groups/channels (limited to {self.dialog_limit})")
+        limit_info = f" (limited to {self.dialog_limit})" if self.dialog_limit is not None else " (unlimited)"
+        logger.info(f"Found {len(groups)} groups/channels{limit_info}")
         return groups
 
     async def get_messages(self, chat_entity, limit=None):
@@ -214,10 +277,12 @@ class TelegramSyncClient:
                         message_data["media_file_id"] = str(message.media.document.id)
                 
                 messages.append(message_data)
+            
+            limit_info = f" (limited to {limit})" if limit is not None else ""
+            logger.info(f"Retrieved {len(messages)} messages from {chat_entity.title}{limit_info}")
         except Exception as e:
             logger.error(f"Error getting messages from {chat_entity.title}: {e}")
         
-        logger.info(f"Retrieved {len(messages)} messages from {chat_entity.title}")
         return messages
 
     def sync_channels_to_api(self, groups):

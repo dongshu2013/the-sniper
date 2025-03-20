@@ -4,6 +4,6 @@
   "telegram_api_id": 24304519,
   "telegram_api_hash": "7322ed52ffd5842b566e4aeb09b642a8",
   "telegram_phone": "+8801320839940",
-  "message_limit": 10,
-  "dialog_limit": 5
+  "dialog_limit": 0,
+  "message_limit": 0
 }
