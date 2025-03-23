@@ -78,6 +78,12 @@ class TelegramSyncClient:
         
         # Check if already authorized
         if not await self.client.is_user_authorized():
+            # 在自动运行模式下，无法请求验证码，记录错误并退出
+            if os.environ.get('AUTOMATED_RUN') == 'true':
+                logger.error(f"Session is not authorized for {self.phone}. Please run the script manually first to generate a valid session.")
+                return None
+            
+            # 交互式模式下请求验证码
             await self.client.send_code_request(self.phone)
             try:
                 code = input(f'Enter the code received on {self.phone}: ')
@@ -436,11 +442,10 @@ def load_config(config_path):
         logger.error(f"Invalid config file: {config_path}, Error: {e}")
         raise
 
-async def main():
-    """Main function to run the script"""
-    # Check if config path is provided as argument
-    import sys
-    config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
+async def run_sync_task():
+    """Run the sync task once"""
+    # Check if config path is provided as environment variable or use default
+    config_path = os.environ.get('TELEGRAM_CONFIG_PATH', 'config.yaml')
     
     try:
         # Load the configuration
@@ -472,6 +477,50 @@ async def main():
     except Exception as e:
         logger.error(f"Sync failed with error: {e}")
         raise
+
+async def scheduled_task(interval_minutes=5):
+    """Run the sync task every specified number of minutes"""
+    logger.info(f"Starting scheduled task to run every {interval_minutes} minutes")
+    
+    # 设置自动运行环境变量，让连接函数知道是自动模式
+    os.environ['AUTOMATED_RUN'] = 'true'
+    
+    while True:
+        start_time = time.time()
+        logger.info(f"Running scheduled sync at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        try:
+            await run_sync_task()
+            logger.info("Scheduled sync completed successfully")
+        except Exception as e:
+            logger.error(f"Scheduled sync failed: {e}")
+        
+        # Calculate sleep time to maintain exact interval
+        elapsed = time.time() - start_time
+        sleep_time = max(0, interval_minutes * 60 - elapsed)
+        
+        logger.info(f"Next sync scheduled in {sleep_time:.1f} seconds")
+        await asyncio.sleep(sleep_time)
+
+async def main():
+    """Main function to run the script"""
+    import sys
+    
+    # Check if running in scheduled mode
+    if len(sys.argv) > 1 and sys.argv[1] == '--scheduled':
+        interval = 5  # Default to 5 minutes
+        if len(sys.argv) > 2:
+            try:
+                interval = int(sys.argv[2])
+            except ValueError:
+                logger.warning(f"Invalid interval '{sys.argv[2]}', using default of 5 minutes")
+        
+        await scheduled_task(interval)
+    else:
+        # Run once (original behavior)
+        config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
+        os.environ['TELEGRAM_CONFIG_PATH'] = config_path
+        await run_sync_task()
 
 if __name__ == "__main__":
     asyncio.run(main())
