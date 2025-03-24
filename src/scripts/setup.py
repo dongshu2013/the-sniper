@@ -7,6 +7,8 @@ import time
 import re
 import requests
 import imghdr
+import boto3
+from botocore.config import Config
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.tl.functions.messages import GetDialogsRequest
@@ -14,8 +16,41 @@ from telethon.tl.functions.channels import GetFullChannelRequest
 from telethon.tl.functions.messages import GetFullChatRequest
 from telethon.tl.types import InputPeerEmpty
 
-# Import the upload_file function from R2 client
-from src.common.r2_client import upload_file
+# R2 configuration
+R2_ENDPOINT = "https://ecfd5a3d56c932e006ece0935c071e19.r2.cloudflarestorage.com"
+R2_ACCESS_KEY_ID = "dd53d7a11683c30cce658b7a662e1a06"
+R2_SECRET_ACCESS_KEY = "af586f2fc98bd7d18b82e16b6e7dd73d855cbecf914fec2b1bcefbf6d98b52b8"
+R2_BUCKET_NAME = "the-sniper"
+
+# Setup R2 client
+s3 = boto3.client(
+    service_name="s3",
+    endpoint_url=R2_ENDPOINT,
+    aws_access_key_id=R2_ACCESS_KEY_ID,
+    aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+    region_name="auto",
+    config=Config(
+        s3={"addressing_style": "virtual"},
+        signature_version="s3v4",
+        retries={"max_attempts": 3},
+    ),
+)
+
+# R2 functions
+def upload_file(file_path: str, key: str):
+    try:
+        s3.upload_file(file_path, R2_BUCKET_NAME, key)
+        return key
+    except Exception as e:
+        logging.error(f"Failed to upload file to R2: {e}")
+        return None
+
+# Setup logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 # Setup logging
 logging.basicConfig(
