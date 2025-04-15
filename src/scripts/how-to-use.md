@@ -35,12 +35,67 @@ accounts:
 
 ## 3. 本地运行
 
-```bash
-# 单次运行
-python setup.py setup_prod.yaml
+1. 手动测试运行:
 
-# 定时运行 (每5分钟)
-python setup.py --scheduled
+```Shell
+   # 单次运行
+   python src/scripts/setup.py src/scripts/setup_env.yaml
+
+   # 带调度的运行
+   python src/scripts/setup.py src/scripts/setup_env.yaml --scheduled
+```
+
+2. 使用运行脚本:
+
+```Shell
+   # 确保脚本有执行权限
+   chmod +x src/scripts/run_telegram_sync.sh
+
+   # 运行脚本
+   ./src/scripts/run_telegram_sync.sh
+```
+
+3. 使用 crontab 设置定时任务:
+
+```Shell
+   # 编辑crontab
+   crontab -e
+
+   # 添加定时任务，例如每5分钟运行一次
+   */5 * * * * cd /Users/kevin/3-work/36-MIZU/366-projects/the-sniper && ./src/scripts/run_telegram_sync.sh >> /Users/kevin/3-work/36-MIZU/366-projects/the-sniper/logs/cron.log 2>&1
+```
+
+### 4. 本地停止
+
+1. 如果在当前终端运行:
+   直接按 Ctrl+C 中断执行
+
+2. 如果在后台或其他终端运行:
+
+找到进程 ID 并终止:
+
+```Shell
+     # 查找Python进程
+     ps aux | grep "setup.py"
+
+     # 终止进程 (将PID替换为实际进程ID)
+     kill <PID>
+
+     # 如果进程没有响应，强制终止
+     kill -9 <PID>
+```
+
+3. 如果使用 run_telegram_sync.sh 脚本启动:
+
+```Shell
+   # 查找运行脚本的进程
+   ps aux | grep "run_telegram_sync.sh"
+
+   # 或者直接找到所有相关Python进程
+   ps aux | grep "python.*setup.py"
+
+   # 终止找到的进程
+   kill <PID>
 ```
 
 ## 4. AWS 服务器部署
