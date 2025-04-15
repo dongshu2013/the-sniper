@@ -247,7 +247,8 @@ tmux new -s telegram-setup
 python3 setup.py setup_prod.yaml
 
 # 重启服务
-sudo systemctl start telegram-sync.timer
+sudo systemctl restart telegram-sync.timer
+sudo systemctl restart telegram-sync.service
 ```
 
 ### 依赖问题
